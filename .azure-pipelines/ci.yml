@@ -1,0 +1,11 @@
+trigger:
+  branches:
+    include: ['*']
+pr: none # Azure Repos PR validation is installed as a branch policy by Terraform.
+pool:
+  vmImage: ubuntu-latest
+jobs:
+- job: Validate
+  timeoutInMinutes: 45
+  steps:
+  - template: validate.yml

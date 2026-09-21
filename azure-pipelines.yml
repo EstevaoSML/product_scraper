@@ -1,0 +1,85 @@
+# Terraform in deploy/azure-devops supplies nonsecret pipeline variables and checks.
+trigger:
+  batch: true
+  branches:
+    include: [main]
+pr: none
+pool:
+  vmImage: ubuntu-latest
+variables:
+  RELEASE_TAG: 'ci-$(Build.BuildId)-$(Build.SourceVersion)'
+stages:
+- stage: BuildPlan
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: ValidateBuildPlan
+    timeoutInMinutes: 60
+    steps:
+    - template: .azure-pipelines/validate.yml
+      parameters:
+        keepImages: true
+    - task: AzureCLI@2
+      displayName: Publish tested images and save Terraform plan
+      inputs:
+        azureSubscription: '$(PLAN_SERVICE_CONNECTION)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        addSpnToEnvironment: true
+        inlineScript: |
+          set -euo pipefail
+          az acr login --name "${APP_NAME}acr"
+          python scripts/publish_ci_images.py "${APP_NAME}acr.azurecr.io" "$RELEASE_TAG"
+          source scripts/pipeline_tf_env.sh
+          mkdir -p "$PLAN_DIRECTORY"
+          # Plan identity can read state, not acquire a write lease. Apply rejects stale plans.
+          terraform -chdir=deploy/terraform plan -input=false -lock=false -out="$PLAN_DIRECTORY/release.tfplan"
+          terraform -chdir=deploy/terraform show -no-color "$PLAN_DIRECTORY/release.tfplan" > "$PLAN_DIRECTORY/plan.txt"
+          printf '%s' "$BUILD_SOURCEVERSION" > "$PLAN_DIRECTORY/commit.txt"
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        SYSTEM_OIDCREQUESTURI: $(System.OidcRequestUri)
+        PIPELINE_SERVICE_CONNECTION_ID: $(PLAN_SERVICE_CONNECTION_ID)
+        PLAN_DIRECTORY: $(Build.ArtifactStagingDirectory)/plan
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/plan'
+        artifact: reviewed-plan
+- stage: Deploy
+  dependsOn: BuildPlan
+  condition: succeeded()
+  lockBehavior: sequential
+  jobs:
+  - deployment: ApplyReviewedPlan
+    environment: '$(RELEASE_ENVIRONMENT)'
+    timeoutInMinutes: 60
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            clean: true
+            persistCredentials: false
+          - download: current
+            artifact: reviewed-plan
+          - bash: bash scripts/install_terraform.sh
+          - task: AzureCLI@2
+            displayName: Apply approved plan and verify Log Analytics ingestion
+            inputs:
+              azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              addSpnToEnvironment: true
+              inlineScript: |
+                set -euo pipefail
+                test "$(cat "$PLAN_DIRECTORY/commit.txt")" = "$BUILD_SOURCEVERSION"
+                source scripts/pipeline_tf_env.sh
+                terraform -chdir=deploy/terraform apply -input=false -lock-timeout=5m "$PLAN_DIRECTORY/release.tfplan"
+                endpoint="$(terraform -chdir=deploy/terraform output -raw mcp_endpoint)"
+                workspace="$(terraform -chdir=deploy/terraform output -raw log_workspace_id)"
+                az extension add --name log-analytics --only-show-errors
+                python scripts/verify_azure_logs.py --endpoint "$endpoint" --workspace "$workspace" --app-name "${APP_NAME}-mcp"
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+              SYSTEM_OIDCREQUESTURI: $(System.OidcRequestUri)
+              PIPELINE_SERVICE_CONNECTION_ID: $(RELEASE_SERVICE_CONNECTION_ID)
+              PLAN_DIRECTORY: $(Pipeline.Workspace)/reviewed-plan

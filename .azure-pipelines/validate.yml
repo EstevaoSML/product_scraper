@@ -1,0 +1,46 @@
+parameters:
+- name: keepImages
+  type: boolean
+  default: false
+steps:
+- checkout: self
+  clean: true
+  persistCredentials: false
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.12'
+- bash: bash scripts/install_terraform.sh
+  displayName: Install verified Terraform binary
+- bash: |
+    set -euo pipefail
+    python -m pip install -r requirements-dev.txt
+    python -m pytest -q --cov=app --cov-branch --cov-fail-under=80 --cov-report=xml:reports/coverage.xml --junitxml=reports/unit.xml
+  displayName: Unit, security and agent contract tests
+- task: PublishTestResults@2
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: JUnit
+    testResultsFiles: reports/unit.xml
+    failTaskOnFailedTests: true
+- task: PublishCodeCoverageResults@2
+  condition: succeededOrFailed()
+  inputs:
+    summaryFileLocation: '$(System.DefaultWorkingDirectory)/reports/coverage.xml'
+- bash: |
+    set -euo pipefail
+    python -m pip install pip-audit==2.10.1
+    python -m pip_audit -r requirements-browser.txt --strict
+    for directory in deploy/terraform deploy/azure-devops; do
+      terraform -chdir="$directory" fmt -check -recursive
+      terraform -chdir="$directory" init -backend=false -input=false
+      terraform -chdir="$directory" validate
+      terraform -chdir="$directory" test -test-directory=verification -no-color
+    done
+  displayName: Dependency audit and offline Terraform tests
+- bash: python scripts/container_ci.py ${{ iif(parameters.keepImages, '--keep-images', '') }}
+  displayName: Real Chrome REST, MCP and navigation integration
+- task: PublishPipelineArtifact@1
+  condition: succeededOrFailed()
+  inputs:
+    targetPath: reports
+    artifact: validation

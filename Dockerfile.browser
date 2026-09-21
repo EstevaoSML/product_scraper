@@ -1,0 +1,14 @@
+# Reuse the pinned, matching Chrome/ChromeDriver binaries; Grid is not started.
+FROM selenium/standalone-chrome:152.0.7977.82-20260905
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt requirements-browser.txt constraints.txt ./
+RUN python3 -m venv /opt/uc && /opt/uc/bin/pip install --no-cache-dir -r requirements-browser.txt
+COPY app ./app
+ENV PATH="/opt/uc/bin:${PATH}" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp/uc-home XDG_CACHE_HOME=/tmp/uc-cache
+RUN /usr/bin/google-chrome --version | grep '152\.' && /usr/bin/chromedriver --version | grep '152\.'
+USER 1200:1201
+EXPOSE 8001
+ENTRYPOINT []
+CMD ["/opt/uc/bin/python", "-m", "uvicorn", "app.browser_worker:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1", "--no-access-log", "--limit-concurrency", "8"]

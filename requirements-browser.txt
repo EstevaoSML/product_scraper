@@ -1,0 +1,4 @@
+-r requirements.txt
+undetected-chromedriver==3.5.5
+# UC imports distutils; setuptools supplies it on Python 3.12+.
+setuptools==80.9.0

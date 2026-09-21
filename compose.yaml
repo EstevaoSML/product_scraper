@@ -1,0 +1,103 @@
+services:
+  api:
+    build: .
+    image: ${SCRAPER_IMAGE:-html-scraper:local}
+    ports:
+      - "127.0.0.1:${SCRAPER_API_PORT:-8000}:8000"
+    environment:
+      API_KEY_FILE: /run/secrets/api_key
+      ERROR_LOG_FILE: /app/logs/errors.jsonl
+      LOG_SERVICE: scraper-api
+      BROWSER_URL: http://chrome:8001
+      BROWSER_PROXY: http://egress:8080
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-example.com,www.americanas.com.br,americanas.com.br}
+      URL_POLICY: ${URL_POLICY:-public}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-127.0.0.1:*,localhost:*,[::1]:*}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+    secrets: [api_key]
+    volumes: [error_logs:/app/logs]
+    # API URL validation needs public DNS. Chrome stays on the internal network.
+    networks: [browser, internet]
+    depends_on:
+      chrome:
+        condition: service_healthy
+      egress:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+  chrome:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    image: ${SCRAPER_BROWSER_IMAGE:-html-scraper-browser:local}
+    platform: linux/amd64
+    shm_size: 2gb
+    environment:
+      API_KEY_FILE: /run/secrets/api_key
+      BROWSER_PROXY: http://egress:8080
+      LOG_SERVICE: scraper-browser
+      URL_POLICY: ${URL_POLICY:-public}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-example.com,www.americanas.com.br,americanas.com.br}
+    secrets: [api_key]
+    networks: [browser]
+    read_only: true
+    # UC patches and executes a private ChromeDriver copy in temporary storage.
+    tmpfs: ["/tmp:rw,exec,size=1g"]
+    cap_drop: [ALL]
+    mem_limit: 3g
+    cpus: 1.5
+    pids_limit: 512
+    init: true
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, /opt/uc/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  egress:
+    build: .
+    image: ${SCRAPER_IMAGE:-html-scraper:local}
+    command: [python, -m, app.egress]
+    environment:
+      UPSTREAM_PROXY_FILE: /run/secrets/upstream_proxy
+    secrets: [upstream_proxy]
+    networks: [browser, internet]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 128
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('localhost',8080),2).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+networks:
+  browser:
+    internal: true
+  internet: {}
+volumes:
+  error_logs: {}
+secrets:
+  api_key:
+    file: ${SCRAPER_API_KEY_FILE:-./secrets/api_key.txt}
+  upstream_proxy:
+    file: ${SCRAPER_UPSTREAM_PROXY_FILE:-./secrets/upstream_proxy.txt}

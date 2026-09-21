@@ -1,0 +1,7 @@
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "YOUR_STATE_ACCOUNT"
+container_name       = "tfstate"
+key                  = "retail-scraper/production.tfstate"
+use_azuread_auth     = true
+# For CI, use workload identity federation (OIDC), not a stored client secret.
+# use_oidc = true

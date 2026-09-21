@@ -1,0 +1,7 @@
+# Use a separate state container from the application state. The pipeline must
+# not have access to the state that grants its own permissions.
+resource_group_name = "rg-terraform-state"
+storage_account_name = "YOURSTATEACCOUNT"
+container_name = "bootstrap-state"
+key = "azure-devops.tfstate"
+use_azuread_auth = true

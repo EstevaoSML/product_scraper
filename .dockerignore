@@ -1,0 +1,8 @@
+*
+!requirements.txt
+!constraints.txt
+!app/
+!app/*.py
+!Dockerfile
+!Dockerfile.browser
+!requirements-browser.txt

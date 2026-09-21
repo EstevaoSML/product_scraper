@@ -1,0 +1,9 @@
+subscription_id           = "YOUR-SUBSCRIPTION-ID"
+name                      = "youruniquescraper"
+location                  = "brazilsouth"
+secret_operator_object_id = "YOUR-ENTRA-OBJECT-ID"
+deploy_workloads          = false
+# Temporary Key Vault seeding access, or leave empty and use a VNet-connected administrator.
+operator_ipv4_cidrs       = []
+api_image_tag             = "v1"
+browser_image_tag         = "v1"

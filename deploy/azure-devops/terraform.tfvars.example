@@ -1,0 +1,14 @@
+subscription_id = "YOUR-SUBSCRIPTION-ID"
+subscription_name = "YOUR-SUBSCRIPTION-NAME"
+project_name = "YOUR-EXISTING-AZURE-DEVOPS-PROJECT"
+repository_name = "YOUR-EXISTING-AZURE-REPOS-REPOSITORY"
+app_name = "youruniquescraper"
+identity_resource_group_name = "rg-delivery-identities"
+state_account_name = "YOUR-APP-STATE-ACCOUNT"
+state_resource_group_name = "rg-terraform-state"
+state_container_name = "tfstate"
+state_key = "scraper.tfstate"
+secret_operator_object_id = "EXISTING-APP-SECRET-OPERATOR-ENTRA-OBJECT-ID"
+approver_ids = ["AZURE-DEVOPS-APPROVER-IDENTITY-ID"]
+location = "brazilsouth"
+log_retention_days = 30
