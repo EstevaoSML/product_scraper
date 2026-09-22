@@ -43,45 +43,27 @@ Snapshots include up to 20,000 characters of visible text, the first 100 visible
 
 ## Bounded agent loop
 
-`app.research.research(client, decide, website, product)` supplies an optional provider-neutral orchestration loop. `client` is a connected official MCP client. Implement a **trusted local** async callback `decide(messages)` using your chosen LLM/agent framework. It receives system instructions, the task and untrusted tool observations; return a JSON dictionary such as:
+`app.research.research(client, decide, website, product)` remains the provider-neutral
+orchestrator. It now validates strict decisions before MCP dispatch and returns the
+public `status/product/evidence/reason` contract. The built-in host-only GPT-5 mini
+adapter uses OpenAI Responses Structured Outputs with independent token/cost
+reservations. See [the retail agent guide](RETAIL-AGENT.md) for Azure Container Apps
+Job infrastructure, local usage, budgets, evidence restrictions and evaluations.
 
-```json
-{"tool":"search_site","arguments":{"snapshot_id":"<observed>","element_id":"e0","query":"PS5"}}
-```
+For custom trusted adapters, `decide(messages)` returns the inner `decision` from
+`app.research_contracts.DecisionEnvelope`. Reports require six explicit nullable
+fields, `product_index`, `offer_index`, and nullable `reason`. Each fact carries
+`value`, `snapshot_id`, and an exact `quote`. All evidence must refer to one
+snapshot, Product and direct Offer, including partial reports. Unstructured pages
+can report name/variant only. Old `{status, fields, reason}` output consumers and
+adapters must migrate to this explicit contract; the CLI reports are now
+`{status, product, evidence, reason}` with `observed_at` timestamps.
 
-Or return a final report:
-
-```json
-{
-  "report": {
-    "status": "partial",
-    "fields": {
-      "name": {"value":"PS5","snapshot_id":"<observed>","quote":"Sony PS5 Digital Edition"},
-      "variant": {"value":"Digital Edition","snapshot_id":"<observed>","quote":"Sony PS5 Digital Edition"},
-      "price": null,
-      "currency": null,
-      "seller": null,
-      "availability": null
-    },
-    "reason": "Price and seller are not shown."
-  }
-}
-```
-
-`complete` requires all six fields, evidenced from the same product-page URL. Every non-null field must quote an observed snapshot and contain its stated value; source URL and timestamp are filled from that snapshot. This prevents unsupported values from passing the output contract, but does not prove that an LLM matched the correct variant or associated the right seller with a price. Those remain model evaluation requirements. Return `partial`, `not_found` or `blocked` when appropriate.
-
-The decision messages are a provider-neutral representation, not a drop-in request for every model SDK. Your adapter must translate roles/tool observations to its provider's message format while retaining the untrusted-data boundary. Enforce model token/cost limits and cancellation inside the adapter. Do not expose additional tools to the model during this loop.
-
-After creating a module such as `my_agent.py` in the repo root with `async def decide(messages)`, run:
-
-```powershell
-python -m pip install -r requirements.txt
-python scripts/research_agent.py --url 'https://www.americanas.com.br/' --product 'PS5 Digital Edition' --key-file '.\secrets\api_key.txt' --decision-module my_agent
-```
-
-For Azure, add `--endpoint 'https://YOUR-APP.azurecontainerapps.io/mcp'` and use a local file containing the **mcp-api-key**, retrieved securely through your operator workflow. Store the model provider credential on the agent host, not in browser settings. The command writes a unique `outputs/research-TIMESTAMP-ID.json`. No model provider is selected or billed by this implementation until you supply and run your adapter.
-
-You can instead connect an existing MCP-capable agent directly to these tools. Give it the workflow instructions in `app/research.py`; the server still enforces browser action limits even if the agent ignores its own prompt.
+The existing `scripts/research_agent.py --decision-module MODULE` remains a custom
+adapter entry point. The supported built-in command is `python -m app.research_job`
+with an explicit `--max-cost-usd`; custom adapters remain responsible for enforcing
+their own provider budgets. Never put model credentials in browser containers or
+MCP arguments. The built-in job removes session capabilities from model inputs.
 
 ## Session and security boundaries
 
@@ -102,4 +84,4 @@ The Azure browser and egress sidecars share networking and a managed identity, u
 
 ## Tests
 
-CI covers snapshots, stale/retargeted references, foreign/transaction destinations, ownership, expiration, budgets, process cleanup, MCP dispatch, output evidence and deterministic orchestration. The Docker suite additionally exercises a real MCP session and a synthetic search/product DOM in Chrome on public example.com, without disabling URL policy. These are tool/contract tests, not real LLM evaluations. Follow `docs/CI.md` before assessing model accuracy, variant matching, injection resistance and costs with a chosen model.
+CI covers snapshots, stale/retargeted references, foreign/transaction destinations, ownership, expiration, budgets, process cleanup, MCP dispatch, output evidence and deterministic orchestration. The Docker suite additionally exercises a real MCP session and a synthetic search/product DOM in Chrome on public example.com, without disabling URL policy. These are tool/contract tests. Deterministic agent evaluations and a separate optional GPT-5 mini evaluation runner are described in [CI.md](CI.md) and [RETAIL-AGENT.md](RETAIL-AGENT.md). No real-model baseline is implied by mocked tests.

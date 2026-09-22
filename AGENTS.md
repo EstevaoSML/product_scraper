@@ -1,5 +1,7 @@
 # Testing reminders for every change
 
+- After implementing and validating a new feature, remind the user to create a Git commit and provide a suggested commit message and concise description of the changes.
+
 - Add meaningful unit tests for new behavior and regression tests for bug fixes.
 - Changes to URL handling, DNS, redirects, proxying, credentials, request limits, or browser lifecycle require abuse-case/security tests.
 - Run `python -m pytest -q --cov=app --cov-branch --cov-fail-under=80` after installing requirements-dev.txt.

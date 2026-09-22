@@ -15,6 +15,7 @@ steps:
     set -euo pipefail
     python -m pip install -r requirements-dev.txt
     python -m pytest -q --cov=app --cov-branch --cov-fail-under=80 --cov-report=xml:reports/coverage.xml --junitxml=reports/unit.xml
+    python scripts/evaluate_research.py
   displayName: Unit, security and agent contract tests
 - task: PublishTestResults@2
   condition: succeededOrFailed()
@@ -30,6 +31,7 @@ steps:
     set -euo pipefail
     python -m pip install pip-audit==2.10.1
     python -m pip_audit -r requirements-browser.txt --strict
+    python -m pip_audit -r requirements-agent.txt --strict
     for directory in deploy/terraform deploy/azure-devops; do
       terraform -chdir="$directory" fmt -check -recursive
       terraform -chdir="$directory" init -backend=false -input=false
@@ -39,6 +41,8 @@ steps:
   displayName: Dependency audit and offline Terraform tests
 - bash: python scripts/container_ci.py ${{ iif(parameters.keepImages, '--keep-images', '') }}
   displayName: Real Chrome REST, MCP and navigation integration
+- bash: python scripts/agent_container_ci.py
+  displayName: Agent image build and credential-free smoke check
 - task: PublishPipelineArtifact@1
   condition: succeededOrFailed()
   inputs:

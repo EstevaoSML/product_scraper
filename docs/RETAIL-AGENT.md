@@ -1,0 +1,152 @@
+# GPT-5 mini retail research on Azure
+
+The agent is a Python process in its own **Azure Container Apps Job**. It calls
+the existing `/mcp` and the OpenAI Responses API. One researcher performs navigation
+and extraction; application code authorizes every action. The browser does not
+receive model credentials or install the agent's dependencies.
+
+## Infrastructure and rollout
+
+`enable_research_agent=true` adds an agent identity, private StorageV2 account and
+`research` container, Blob private endpoint/DNS, scoped RBAC and (when
+`deploy_workloads=true`) a manual Container Apps Job. Existing ACR, Container Apps
+environment, Key Vault and Log Analytics are reused. No new public API or queue.
+
+The job has one replica per execution, no automatic platform retry, a 300-second
+platform timeout and a 270-second process deadline. A bare start executes `--help`
+and does not make paid calls. A Blob lease serializes overlapping job executions.
+
+1. Review Terraform before applying. On an existing scraper, retain
+   `deploy_workloads=true`; turning it off removes existing workloads. Prepare
+   the agent image and secret before enabling its deployment in that stack.
+2. A trusted operator stores `openai-api-key` in the existing Key Vault using a
+   secure operator session. Never put values in tfvars, Terraform secret data
+   sources, build arguments, command arguments or source control.
+3. Build `Dockerfile.agent` into the existing registry as `retail-agent:TAG`; set
+   `agent_image_tag=TAG`. API/browser images need no model dependencies.
+4. Review and apply the saved plan. The agent can read only `openai-api-key` and
+   `mcp-api-key`, not the browser backend key. Existing identities receive no
+   additional model-secret permissions.
+5. Start a manual job with URL, product and an explicit USD cap. Only trusted
+   operators should have job-start permissions, since starting jobs exercises
+   their configured identity and secrets.
+6. Read `reports/<run-id>.json` in the private `research` container. Operators
+   need explicit Blob Data Reader access and VNet/private-DNS connectivity.
+   Log Analytics records safe metadata, never page bodies or prompts.
+
+This Terraform does not deploy itself. Mock tests are not live Azure acceptance.
+The browser/egress isolation limitations in the existing deployment guide remain.
+
+## Usage
+
+Install `requirements-agent.txt` on the agent host. Supply `OPENAI_API_KEY`
+securely through its process environment. The scraper key is separate:
+
+```powershell
+python -m app.research_job --url 'https://www.example-retailer.com/' --product 'Console Nova Digital 1TB' --max-cost-usd 0.05 --key-file '.\secrets\api_key.txt'
+```
+
+The example URL is a placeholder. Local reports go to `outputs/`. Azure uses
+`MCP_API_KEY`, `MCP_ENDPOINT`, `AZURE_CLIENT_ID` and `RESEARCH_STORAGE_ACCOUNT`,
+wired by Terraform. The OpenAI endpoint/model are fixed in trusted code.
+
+Manual Azure start (trusted CLI login and existing deployment required):
+
+```powershell
+az containerapp job start --name YOUR_RESEARCH_JOB --resource-group YOUR_RESOURCE_GROUP --container-name agent --args '--url=https://www.example-retailer.com/' '--product=Console Nova Digital 1TB' '--max-cost-usd=0.05'
+```
+
+Check `az containerapp job start --help` for your CLI version. Only task parameters
+are passed; the container environment keeps Key Vault references.
+
+## Contracts and controls
+
+`app.research.research(client, decide, website, product)` remains provider-neutral.
+`decide(messages)` returns one strict search/link/inspect/final decision from
+`app.research_contracts.DecisionEnvelope`. The OpenAI adapter wraps it in
+`{"decision": ...}` for Structured Outputs, then unwraps it for the loop.
+
+Session capabilities are omitted from model observations; the host injects them
+when dispatching MCP. Searches use the exact user query. Elements must exist in
+the latest snapshot and have the correct action. Foreign/transaction links are
+rejected locally, and the scraper retains DNS/SSRF/egress checks. Repeated
+identical searches/links are rejected. Blocked pages stop before another decision.
+
+| Budget | Enforced outside the model |
+|---|---|
+| Session | 180 seconds, reserving the final 10 seconds for cleanup |
+| Navigation | 10 attempts including open; 5 followed-link attempts |
+| Model | 8 calls; 24,000 cumulative input and 8,000 cumulative output tokens |
+| Per model call | 2,048 output tokens including reasoning; 45 seconds |
+| Invalid decisions/reports | Up to 2 corrective retries |
+| MCP 429 | Up to 2 retries honoring delay and remaining time |
+| Provider 429 | Up to 2 retries, each charged to model budgets |
+| Cost | Explicit positive `--max-cost-usd`, maximum USD 10 |
+
+The adapter reserves conservative input tokens (UTF-8 request bytes plus framing
+margin) and maximum output before dispatch, then reconciles actual usage.
+Unknown usage retains the full reservation. This can stop early. Rates are
+standard text input USD 0.25/million and output USD 2.00/million, checked 2026-09-21
+against [GPT-5 mini documentation](https://developers.openai.com/api/docs/models/gpt-5-mini).
+Reverify rates before deploying: local accounting is not a provider billing lock.
+The selected model remains `gpt-5-mini`; prompt version is `retail-research-v1`.
+
+A 60-second Blob lease is renewed every 20 seconds, acquired before any paid/model
+or MCP call. A busy lease fails fast. Lost renewal cancels work and waits for its
+`finally` before release. The scraper lease also protects against other clients
+that do not participate in this lock.
+
+Cleanup attempts `close_session` in `finally`, including errors/cancellation,
+with its own timeout. A lost open response may leave no known session ID, and a
+force-killed process cannot run finally: server expiry remains the fallback.
+Failed cleanup is recorded as `cleanup=failed`, never reported as successful.
+
+## Evidence and output
+
+The public report has `status`, `product`, `evidence` and nullable `reason`.
+Product fields are name, variant, price, currency, seller and availability, with
+literal string values or null. Prices are not silently converted or normalized.
+Every non-null value has an exact quote, source_url and observed_at.
+
+Internal reports also select zero-based `product_index` and `offer_index` from
+observed Product JSON-LD, and each fact contains snapshot_id. All facts must refer
+to one snapshot, one Product and one direct Offer, even in partial results.
+The selected name must appear in visible text. Name/variant must support the query
+tokens. Price, currency, seller and availability must equal the selected Offer's
+corresponding values; AggregateOffer and cross-seller combinations are rejected.
+
+Without structured Offer association, only name/variant can be returned, with
+financial fields null and status partial. This conservative limitation sacrifices
+recall to avoid associating unrelated cards on a shared URL. JSON-LD can still be
+stale or dishonest. Source association is not a guarantee of retailer truth;
+semantic variant/accessory matching and contradictions need model evaluation.
+
+## Tests and evaluations
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest -q --cov=app --cov-branch --cov-fail-under=80
+python scripts/evaluate_research.py
+python scripts/container_ci.py
+python scripts/agent_container_ci.py
+```
+
+`evals/retail_fixtures.py` is a versioned synthetic navigation corpus. Offline tests
+exercise the production loop and adapter through fake MCP/HTTP transports: exact
+extraction, variants, multiple sellers, quotes, injection, forbidden calls, canary
+secrets, budgets, retries, blocks, malformed output, cancellation and cleanup.
+Container CI remains a real Docker/example.com check using a synthetic retail DOM.
+
+Manual model evaluation (paid, synthetic pages only):
+
+```powershell
+python scripts/evaluate_research.py --live-model --max-cost-usd 0.50 --repeats 3
+```
+
+The manual GitHub workflow `agent-evaluation.yml` runs only from the default branch
+with an explicit total cap. Configure environment `retail-model-evaluation` with
+required reviewers, branch restrictions and its `OPENAI_API_KEY` secret first.
+Only sanitized metrics are uploaded. PR jobs never receive provider secrets.
+No passing real-model baseline is claimed until that job is run and reviewed.
+See `evals/AGENT-EVALUATION.md` for thresholds. Real-retailer acceptance is optional
+and manual, separate from the synthetic evaluation suite.

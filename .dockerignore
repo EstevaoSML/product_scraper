@@ -6,3 +6,5 @@
 !Dockerfile
 !Dockerfile.browser
 !requirements-browser.txt
+!requirements-agent.txt
+!Dockerfile.agent

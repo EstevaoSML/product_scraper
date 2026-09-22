@@ -132,3 +132,7 @@ Review `terraform plan -destroy` before removal. Key Vault purge protection inte
 Use [the Azure DevOps bootstrap](../azure-devops/README.md) after the foundation and secret initialization. The application provider now disables automatic resource-provider registration so scoped pipeline identities can run it. Have a subscription administrator register Microsoft.App, Microsoft.ContainerRegistry, Microsoft.KeyVault, Microsoft.ManagedIdentity, Microsoft.Network, Microsoft.OperationalInsights, Microsoft.Insights and Microsoft.Storage once before provisioning.
 
 Application and worker errors now carry severity/service/revision metadata. Terraform installs saved searches for structured errors and Container Apps platform failures. The CD pipeline verifies actual ingestion by request ID after applying an approved plan.
+
+## Optional retail research job
+
+Set `enable_research_agent=true` to add the isolated GPT-5 mini agent, identity, private Blob reports/lease and manual Container Apps Job. Prepare `openai-api-key` in Key Vault and the `Dockerfile.agent` image before workload deployment. Use `agent_image_tag` for its release. Existing browser/API identities receive no model key. See [the agent runbook](../../docs/RETAIL-AGENT.md).

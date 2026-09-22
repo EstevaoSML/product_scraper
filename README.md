@@ -192,3 +192,7 @@ Use [the Container Apps deployment guide](deploy/terraform/README.md) for Terraf
 ## Azure DevOps delivery and cloud error logs
 
 [Azure DevOps CI/CD setup](deploy/azure-devops/README.md) documents the Terraform bootstrap, protected pipelines, workload identity federation, approval-gated deployment and post-deployment Log Analytics verification. Container errors include severity, service, revision and request ID; use the saved workspace queries installed by the application Terraform.
+
+## GPT-5 mini retail research agent
+
+See [docs/RETAIL-AGENT.md](docs/RETAIL-AGENT.md) for the bounded agent, Azure Container Apps Job, private reports and synthetic evaluations. Infrastructure is optional through `enable_research_agent`; running a model always requires an explicit spending cap.

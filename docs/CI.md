@@ -36,11 +36,11 @@ Readiness has a 180-second bound; build/start have process timeouts. The hosted 
 
 After the first successful hosted run, configure branch protection to require the three CI jobs before merging. This is a GitHub repository setting and isn't enabled merely by committing the workflow file.
 
-## AI/agent evaluations to add when that feature exists
+## AI/agent evaluation requirements
 
-There is currently **no LLM extractor or agent runtime**. No existing check measures model accuracy, prompt-injection resistance, or agent safety. The corpus in `evals/cases.json` is a starting fixture set for the future implementation; it is not a passing evaluation suite.
+A host-only GPT-5 mini runtime now exists. `evals/retail_fixtures.py` and `checks/check_research*.py` exercise its real loop/adapter with deterministic synthetic MCP and HTTP responses. `scripts/evaluate_research.py` runs the versioned corpus offline; `--live-model --max-cost-usd ...` invokes GPT-5 mini in an explicitly paid manual evaluation. The original `evals/cases.json` remains a legacy HTML fixture sketch, not the navigation evaluation corpus. Mock tests do not measure real-model accuracy or general injection resistance. No passing live-model baseline is claimed.
 
-Before merging the first AI feature, wire these fixtures to its real entry point and add:
+The evaluation contract in `evals/AGENT-EVALUATION.md` requires:
 
 | Category | Concrete evaluation |
 |---|---|
@@ -83,3 +83,21 @@ Terraform CI validates public API/internal browser ingress, Key Vault references
 The Terraform bootstrap in `deploy/azure-devops` creates a credential-free CI pipeline and a protected CD pipeline for an existing Azure Repos project/repository. Both run the test template in `.azure-pipelines/validate.yml`. CD publishes the exact successful container-CI images and applies a saved Terraform plan after an external service-connection approval. The GitHub workflow remains available and also validates the Azure DevOps bootstrap.
 
 `checks/check_delivery.py` exercises publishing guards, the pipeline's identity/plan boundaries, structured console log metadata and the Log Analytics verifier. `scripts/verify_azure_logs.py` is a live post-deployment check; mocked tests do not prove ingestion. Full pipeline task logs remain in Azure DevOps; application console/system errors are routed to Log Analytics. See the bootstrap README for state network access, roles, approvers and initial rollout.
+
+## Retail agent job validation
+
+See [RETAIL-AGENT.md](RETAIL-AGENT.md) for the full runbook. `requirements-agent.txt`
+is isolated from production API/browser requirements and audited separately.
+`python scripts/agent_container_ci.py` builds Dockerfile.agent and checks CLI,
+imports and contracts with no network inside the runtime container and no secrets.
+It does not replace the real browser smoke suite in `scripts/container_ci.py`.
+
+Terraform tests verify optional deployment, private storage, bounded manual jobs,
+Key Vault references and separation of model/browser credentials. Deployment and
+actual Azure lease/network/log delivery still require a live acceptance run.
+
+The manual default-branch-only workflow `.github/workflows/agent-evaluation.yml`
+requires a protected `retail-model-evaluation` environment. Configure reviewers
+and branch restrictions outside Git before using it. Never expose its provider
+secret to PR jobs. Reports contain aggregate metrics/case IDs, not page bodies,
+model reasoning, credentials or raw transport errors.

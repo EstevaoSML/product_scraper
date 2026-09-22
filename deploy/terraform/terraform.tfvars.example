@@ -7,3 +7,7 @@ deploy_workloads          = false
 operator_ipv4_cidrs       = []
 api_image_tag             = "v1"
 browser_image_tag         = "v1"
+
+# Optional host-only GPT-5 mini agent; prepare image and Key Vault secret first.
+# enable_research_agent = true
+# agent_image_tag = "v1"
