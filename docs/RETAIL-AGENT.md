@@ -46,7 +46,12 @@ securely through its process environment. The scraper key is separate:
 python -m app.research_job --url 'https://www.example-retailer.com/' --product 'Console Nova Digital 1TB' --max-cost-usd 0.05 --key-file '.\secrets\api_key.txt'
 ```
 
-The example URL is a placeholder. Local reports go to `outputs/`. Azure uses
+The example URL is a placeholder. Local reports and diagnostics go to `outputs/agent/`
+by default (override with `--output-dir`). Filenames include the run start timestamp
+in UTC and a unique UUID: `research-YYYYMMDDTHHMMSSffffffZ-<run_id>.json`
+and `diagnostics-YYYYMMDDTHHMMSSffffffZ-<run_id>.json`. The report and diagnostics
+share the same timestamp and UUID, so earlier reports are preserved. Azure reports
+also use timestamped filenames. Azure uses
 `MCP_API_KEY`, `MCP_ENDPOINT`, `AZURE_CLIENT_ID` and `RESEARCH_STORAGE_ACCOUNT`,
 wired by Terraform. The OpenAI endpoint/model are fixed in trusted code.
 
@@ -122,6 +127,32 @@ stale or dishonest. Source association is not a guarantee of retailer truth;
 semantic variant/accessory matching and contradictions need model evaluation.
 
 ## Tests and evaluations
+
+### Diagnosing partial runs
+
+Local runs also save `outputs/agent/diagnostics-<timestamp>-<run_id>.json`, containing the same
+safe counters printed to the console. Exceptions produce an allowlisted code
+in `reason` and `navigation.failure`, with the failing stage and HTTP status
+when available. Raw exception messages, provider bodies and credentials are
+never included in these diagnostics.
+
+`model_input_budget` means the conservative input estimate exceeded the remaining
+token allowance before dispatch. Zero model calls with one navigation operation
+can indicate this preflight stop; it does not establish an invalid API key.
+Increasing the USD cap does not increase the input token limit.
+Oversized snapshots now receive a deterministic prompt view sized to the remaining
+input allowance, including JSON escaping, instructions and schema overhead.
+Search fields and query-matching links are prioritized. Product records are kept
+whole as an unchanged prefix, preserving product/offer indexes; visible excerpts
+are exact substrings. The original snapshot remains the evidence validator's
+source. Omission is explicit and can reduce recall. After any such compaction,
+`not_found` is downgraded to `partial`; omitted evidence does not establish absence.
+If even the mandatory context cannot fit, `model_input_budget` still stops dispatch.
+No token/cost cap is raised and no extra model request is used for compaction.
+`provider_authentication` means HTTP 401; `provider_quota` means a billing or
+quota rejection and is not retried. `provider_rate_limit` means bounded rate-limit
+retries were exhausted. `provider_connection` and `provider_timeout` identify
+transport failures. Share the safe code/counters when troubleshooting, never keys.
 
 ```powershell
 python -m pip install -r requirements-dev.txt

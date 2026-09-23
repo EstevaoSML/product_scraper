@@ -93,3 +93,41 @@ def check_call_limit_and_cumulative_tokens():
     b.reconcile(reservation, {'input_tokens':10,'output_tokens':20})
     with pytest.raises(BudgetExceeded): b.reserve(1,1)
     assert b.summary()['calls'] == 1
+
+
+@pytest.mark.parametrize('status,code', [(400,'provider_bad_request'), (401,'provider_authentication'),
+    (403,'provider_permission'), (404,'provider_not_found'), (503,'provider_unavailable')])
+def check_safe_http_diagnostics(status, code):
+    from app.research_errors import failure_details
+    with pytest.raises(ProviderFailure) as caught:
+        asyncio.run(OpenAIDecider(HTTP([response(status,text=CANARY)]), CANARY, ModelBudget('0.05'))([]))
+    details, reason = failure_details(caught.value, 'model_decision')
+    assert details == {'code':code,'stage':'model_decision','http_status':status}
+    assert CANARY not in reason and code in reason
+
+
+def check_quota_is_not_retried_or_leaked():
+    body = {'error':{'code':'insufficient_quota','message':CANARY}}
+    reply = SimpleNamespace(status_code=429, headers={}, json=lambda:body)
+    http = HTTP([reply])
+    with pytest.raises(ProviderFailure) as caught:
+        asyncio.run(OpenAIDecider(http,CANARY,ModelBudget('0.05'))([]))
+    assert caught.value.code == 'provider_quota' and len(http.calls) == 1
+    assert CANARY not in str(caught.value)
+
+
+def check_large_observation_stops_before_any_request():
+    http, budget = HTTP([]), ModelBudget('0.05')
+    with pytest.raises(BudgetExceeded) as caught:
+        asyncio.run(OpenAIDecider(http,CANARY,budget)([
+            {'role':'system','content':'trusted'}, {'role':'user','content':'task'},
+            {'role':'tool','content':'x'*24000}]))
+    assert caught.value.code == 'model_input_budget'
+    assert not http.calls and budget.calls == 0 and budget.cost == 0
+
+
+def check_transport_failure_is_sanitized():
+    import httpx
+    with pytest.raises(ProviderFailure) as caught:
+        asyncio.run(OpenAIDecider(HTTP([httpx.ConnectError(CANARY)]),CANARY,ModelBudget('0.05'))([]))
+    assert caught.value.code == 'provider_connection' and CANARY not in str(caught.value)

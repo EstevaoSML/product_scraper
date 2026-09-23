@@ -8,6 +8,7 @@ import time
 from urllib.parse import unquote, urlsplit
 
 from app.policy import validate_url_structure
+from app.research_errors import ResearchFailure, failure_details
 from app.research_contracts import (DecisionEnvelope, FinalDecision, REQUIRED_FIELDS,
                                     Report, Fact, empty_result, validate_report)
 
@@ -95,6 +96,7 @@ async def research(client, decide, website, product, *, max_decisions=8,
     searched = followed = False
     require_inspect = False
     seen = set()
+    stage = 'open_page'
     messages = [{'role': 'system', 'content': INSTRUCTIONS},
                 {'role': 'user', 'content': json.dumps({'website': website, 'product': product})}]
 
@@ -105,13 +107,15 @@ async def research(client, decide, website, product, *, max_decisions=8,
         return await asyncio.wait_for(call(), remaining)
 
     async def dispatch(name, arguments):
+        nonlocal stage
+        stage = name
         while True:
             if stats['operations'] >= max_operations:
-                raise ValueError('Operation budget')
+                raise ResearchFailure('navigation_operation_budget')
             stats['operations'] += 1
             if name == 'follow_link':
                 if stats['links'] >= max_links:
-                    raise ValueError('Link budget')
+                    raise ResearchFailure('navigation_link_budget')
                 stats['links'] += 1
             result = await bounded(lambda: client.call_tool(name, arguments))
             if not result.is_error:
@@ -120,10 +124,10 @@ async def research(client, decide, website, product, *, max_decisions=8,
             if error.get('http_status') != 429:
                 return result
             if stats['retries'] >= max_retries:
-                raise ValueError('Retry budget')
+                raise ResearchFailure('navigation_retry_budget')
             wait = error.get('retry_after_seconds', 1)
             if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 60:
-                raise ValueError('Invalid retry delay')
+                raise ResearchFailure('navigation_retry_delay')
             wait = max(1, wait)
             if clock() + wait >= action_deadline:
                 raise TimeoutError()
@@ -160,7 +164,9 @@ async def research(client, decide, website, product, *, max_decisions=8,
                 return empty_result('Retailer blocked access', 'blocked')
             stats['decisions'] += 1
             try:
+                stage = 'model_decision'
                 decision = await bounded(lambda: decide(copy.deepcopy(messages)))
+                stage = 'decision_validation'
                 parsed = DecisionEnvelope.model_validate({'decision': decision}).decision
                 if isinstance(parsed, FinalDecision):
                     candidate = parsed.report.model_dump()
@@ -218,9 +224,10 @@ async def research(client, decide, website, product, *, max_decisions=8,
         return empty_result('Decision budget exhausted')
     except asyncio.CancelledError:
         raise
-    except Exception:
+    except Exception as error:
         # Never return raw SDK/transport exceptions (may contain credentials/body).
-        return empty_result('Research stopped: budget, timeout, provider or transport failure')
+        stats['failure'], reason = failure_details(error, stage)
+        return empty_result(reason)
     finally:
         if session_id:
             async def close():

@@ -5,21 +5,17 @@ from decimal import Decimal
 import json
 from urllib.parse import quote
 
+import httpx
+
 from app.research_contracts import DecisionEnvelope
+from app.research_errors import BudgetExceeded, ProviderFailure
+from app.research_context import VIEW_NOTE, compact_observation, wire_size
 
 MODEL = 'gpt-5-mini'
 # Standard text rates, checked 2026-09-21. Recheck before deployment.
 # https://developers.openai.com/api/docs/models/gpt-5-mini
 INPUT_USD_PER_MILLION = Decimal('0.25')
 OUTPUT_USD_PER_MILLION = Decimal('2.00')
-
-
-class BudgetExceeded(RuntimeError):
-    pass
-
-
-class ProviderFailure(RuntimeError):
-    pass
 
 
 class SecretGuard:
@@ -63,9 +59,14 @@ class ModelBudget:
 
     def reserve(self, inputs, outputs):
         cost = self.price(inputs, outputs)
-        if (self.calls >= self.max_calls or self.input_tokens + inputs > self.max_input
-                or self.output_tokens + outputs > self.max_output or self.cost + cost > self.limit):
-            raise BudgetExceeded('Model budget exhausted')
+        if self.calls >= self.max_calls:
+            raise BudgetExceeded('model_call_budget')
+        if self.input_tokens + inputs > self.max_input:
+            raise BudgetExceeded('model_input_budget')
+        if self.output_tokens + outputs > self.max_output:
+            raise BudgetExceeded('model_output_budget')
+        if self.cost + cost > self.limit:
+            raise BudgetExceeded('model_cost_budget')
         self.calls += 1
         self.input_tokens += inputs
         self.output_tokens += outputs
@@ -75,7 +76,7 @@ class ModelBudget:
     def reconcile(self, reservation, usage):
         i, o = usage.get('input_tokens'), usage.get('output_tokens')
         if type(i) is not int or type(o) is not int or not 0 <= i <= reservation[0] or not 0 <= o <= reservation[1]:
-            raise BudgetExceeded('Missing or inconsistent usage; reservation retained')
+            raise BudgetExceeded('model_usage_invalid')
         self.input_tokens -= reservation[0] - i
         self.output_tokens -= reservation[1] - o
         self.cost -= self.price(reservation[0] - i, reservation[1] - o)
@@ -91,6 +92,7 @@ class OpenAIDecider:
         self.guard = guard or SecretGuard([api_key])
         self.sleep = sleep
         self.retries = 0
+        self.context_was_compacted = False
 
     async def __call__(self, messages):
         # Preserve system/task boundary; tool observations are JSON DATA in user
@@ -107,39 +109,89 @@ class OpenAIDecider:
         while True:
             output_limit = min(2048, self.budget.max_output - self.budget.output_tokens)
             if output_limit < 256:
-                raise BudgetExceeded('Insufficient output budget')
+                raise BudgetExceeded('model_output_budget')
             body = {'model': MODEL, 'input': inputs, 'store': False,
                     'reasoning': {'effort': 'low'}, 'max_output_tokens': output_limit,
                     'text': {'format': {'type': 'json_schema', 'name': 'retail_decision',
                                        'strict': True, 'schema': DecisionEnvelope.model_json_schema()}}}
             bound = len(json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()) + 1024
+            remaining = self.budget.max_input - self.budget.input_tokens
+            if bound > remaining and current:
+                # Fit only the current observation; trusted instructions/schema
+                # and the user's exact task are never truncated.
+                fitted = [dict(item) for item in inputs]
+                index = len(messages[:2]) + len(previous)
+                fitted[index]['content'] = 'UNTRUSTED_PAGE_DATA\n'
+                fitted.append({'role': 'developer', 'content': VIEW_NOTE})
+                body['input'] = fitted
+                overhead = len(json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()) + 1024
+                try:
+                    task = json.loads(messages[1]['content'])
+                    query = task.get('product', '') if isinstance(task, dict) else ''
+                except (ValueError, IndexError):
+                    query = ''
+                view = compact_observation(current[0]['content'], query if isinstance(query, str) else '',
+                                           remaining - overhead + wire_size(''))
+                if view is not None:
+                    fitted[index]['content'] += view
+                    self.context_was_compacted = True
+                else:
+                    raise BudgetExceeded('model_input_budget')
+                bound = len(json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()) + 1024
             reservation = self.budget.reserve(bound, output_limit)
             # No SDK automatic retries; all attempts consume explicit budgets.
-            response = await self.http.post('https://api.openai.com/v1/responses', json=body,
-                                            headers={'Authorization': 'Bearer ' + self.api_key},
-                                            timeout=45)
+            try:
+                response = await self.http.post('https://api.openai.com/v1/responses', json=body,
+                                                headers={'Authorization': 'Bearer ' + self.api_key},
+                                                timeout=45)
+            except httpx.TimeoutException:
+                raise ProviderFailure('provider_timeout') from None
+            except httpx.RequestError:
+                raise ProviderFailure('provider_connection') from None
+            # Read only allowlisted billing codes. Never retain message/param/body.
+            if response.status_code == 429:
+                try:
+                    error = response.json().get('error', {})
+                except (ValueError, AttributeError):
+                    error = {}
+                quota_codes = ('insufficient_quota', 'billing_hard_limit_reached',
+                               'organization_spend_limit_exceeded', 'project_spend_limit_exceeded',
+                               'organization_usage_limit_exceeded')
+                if isinstance(error, dict) and (error.get('code') in quota_codes or error.get('type') == 'insufficient_quota'):
+                    raise ProviderFailure('provider_quota', http_status=429)
             if response.status_code == 429 and self.retries < 2:
                 try:
                     delay = float(response.headers.get('Retry-After', '1'))
                 except (ValueError, TypeError):
                     # Unknown retry format: stop, never immediately resubmit.
-                    raise ProviderFailure('Unsupported provider retry delay') from None
+                    raise ProviderFailure('provider_retry_delay', http_status=429) from None
                 if not 0 <= delay <= 60:
-                    raise BudgetExceeded('Provider retry delay exceeds limit')
+                    raise ProviderFailure('provider_retry_delay', http_status=429)
                 self.retries += 1
                 await self.sleep(max(1, delay))
                 continue
             if response.status_code != 200:
-                raise ProviderFailure('Model provider request failed')
+                code = {400: 'provider_bad_request', 401: 'provider_authentication',
+                        403: 'provider_permission', 404: 'provider_not_found',
+                        429: 'provider_rate_limit'}.get(response.status_code,
+                        'provider_unavailable' if response.status_code >= 500 else 'provider_http')
+                raise ProviderFailure(code, http_status=response.status_code)
             if len(response.content) > 131072:
-                raise ProviderFailure('Oversized provider response')
+                raise ProviderFailure('provider_response_size')
             data = response.json()
             self.budget.reconcile(reservation, data.get('usage', {}))
             if data.get('status') != 'completed':
-                raise ProviderFailure('Model response incomplete')
+                details = data.get('incomplete_details') or {}
+                code = 'provider_output_limit' if isinstance(details, dict) and details.get('reason') == 'max_output_tokens' else 'provider_incomplete'
+                raise ProviderFailure(code)
             texts = [part['text'] for item in data.get('output', []) if item.get('type') == 'message'
                      for part in item.get('content', []) if part.get('type') == 'output_text']
             if len(texts) != 1:
                 raise ValueError('Missing or ambiguous model decision')
             self.guard.check(texts)
-            return DecisionEnvelope.model_validate_json(texts[0]).decision.model_dump()
+            decision = DecisionEnvelope.model_validate_json(texts[0]).decision.model_dump()
+            report = decision.get('report')
+            if self.context_was_compacted and report and report['status'] == 'not_found':
+                report['status'] = 'partial'
+                report['reason'] = 'Observation content was omitted to fit the input budget; absence cannot be established.'
+            return decision

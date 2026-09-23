@@ -1,6 +1,7 @@
 """Job integration with actual loop/adapter, fake external transports only."""
 import asyncio
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -62,6 +63,9 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     output = capsys.readouterr().out
     assert CANARY not in output and 'SYNTHETIC_MCP_CREDENTIAL' not in output
     assert json.loads(output)['navigation']['cleanup']=='closed'
+    diagnostics = next(tmp_path.glob('diagnostics-*.json')).read_text()
+    assert json.loads(diagnostics) == json.loads(output)
+    assert CANARY not in diagnostics and 'SYNTHETIC_MCP_CREDENTIAL' not in diagnostics
 
 
 def check_local_key_file(monkeypatch,tmp_path):
@@ -69,6 +73,42 @@ def check_local_key_file(monkeypatch,tmp_path):
     key = tmp_path/'synthetic-key.txt'
     key.write_text('SYNTHETIC_MCP_CREDENTIAL')
     assert asyncio.run(research_job.run(arguments(tmp_path,key_file=str(key))))['status']=='complete'
+
+
+def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,capsys):
+    monkeypatch.chdir(tmp_path)
+    for _ in range(2):
+        setup_job(monkeypatch)
+        args = research_job.parser().parse_args([
+            '--url',WEBSITE,'--product',PRODUCT,'--max-cost-usd','0.05'])
+        assert args.output_dir == 'outputs/agent'
+        # Isolate local CLI behavior from inherited Azure configuration.
+        args.storage_account = None
+        asyncio.run(research_job.run(args))
+    folder = tmp_path/'outputs'/'agent'
+    assert len(list(folder.glob('research-*.json'))) == 2
+    assert len(list(folder.glob('diagnostics-*.json'))) == 2
+    assert not list((tmp_path/'outputs').glob('*.json'))
+    runs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert runs[0]['run_id'] != runs[1]['run_id']
+    assert all(json.loads((tmp_path/run['result']).read_text())['status']=='complete' for run in runs)
+    for report in folder.glob('research-*.json'):
+        assert re.fullmatch(r'research-\d{8}T\d{12}Z-[a-f0-9]{32}\.json', report.name)
+        assert (folder / report.name.replace('research-', 'diagnostics-', 1)).exists()
+
+
+def check_large_pages_fit_budget_and_complete_with_cleanup(monkeypatch,tmp_path,capsys):
+    client, _ = setup_job(monkeypatch)
+    for page in client.pages:
+        page['visible_text'] = 'Unrelated promotion\n' * 1000 + page['visible_text']
+        page['elements'] += [dict(element_id=f'e{i+2}', action='follow_link',
+            href=WEBSITE+str(i), accessible_name='Unrelated category '*8) for i in range(98)]
+    result = asyncio.run(research_job.run(arguments(tmp_path)))
+    assert result['status'] == 'complete'
+    assert result['product']['seller'] == 'Loja Azul'
+    assert [name for name, _ in client.calls] == ['open_page','search_site','follow_link','close_session']
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['budgets']['calls'] == 3 and summary['navigation']['cleanup'] == 'closed'
 
 
 def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
@@ -98,6 +138,7 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
             assert client.calls[-1][0]=='close_session'
             assert json.loads(payload)['status']=='complete'
             assert name.startswith('reports/')
+            assert re.fullmatch(r'reports/\d{8}T\d{12}Z-[a-f0-9]{32}\.json', name)
             assert kwargs['overwrite'] is False
             events.append('upload')
     class Credential(Context):

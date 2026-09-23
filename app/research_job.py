@@ -1,6 +1,7 @@
 """Manual Azure Container Apps Job entry point; also usable locally."""
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -30,6 +31,8 @@ async def run(args):
     validate_endpoint(args.endpoint)
     budget = ModelBudget(args.max_cost_usd)
     run_id = uuid.uuid4().hex
+    run_timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    file_id = f'{run_timestamp}-{run_id}'
     mcp_key = Path(args.key_file).read_text(encoding='utf-8').strip() if args.key_file else os.environ.pop('MCP_API_KEY')
     model_key = os.environ.pop('OPENAI_API_KEY')
     if not mcp_key or not model_key:
@@ -73,19 +76,22 @@ async def run(args):
                     pass
                 result = await exclusive_research(lock, work)
                 payload = json.dumps(result, ensure_ascii=False)
-                await asyncio.wait_for(container.upload_blob(f'reports/{run_id}.json', payload,
+                await asyncio.wait_for(container.upload_blob(f'reports/{file_id}.json', payload,
                                                               overwrite=False), 20)
-                destination = f'reports/{run_id}.json'
+                destination = f'reports/{file_id}.json'
     else:
         result = await work()
         folder = Path(args.output_dir)
         folder.mkdir(parents=True, exist_ok=True)
-        destination = folder / f'research-{run_id}.json'
+        destination = folder / f'research-{file_id}.json'
         destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     # Only fixed metadata, never prompts, page bodies, request headers or SDK errors.
-    print(json.dumps({'service': 'retail-agent', 'run_id': run_id, 'status': result['status'],
+    summary = {'service': 'retail-agent', 'run_id': run_id, 'status': result['status'],
                       'prompt_version': PROMPT_VERSION, 'result': str(destination),
-                      'budgets': budget.summary(), 'navigation': stats}))
+                      'budgets': budget.summary(), 'navigation': stats}
+    if not args.storage_account:
+        (folder / f'diagnostics-{file_id}.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+    print(json.dumps(summary))
     return result
 
 
@@ -98,7 +104,8 @@ def parser():
     cli.add_argument('--key-file', help='Local scraper key file; Azure uses MCP_API_KEY')
     cli.add_argument('--storage-account', default=os.getenv('RESEARCH_STORAGE_ACCOUNT'))
     cli.add_argument('--identity-client-id', default=os.getenv('AZURE_CLIENT_ID'))
-    cli.add_argument('--output-dir', default='outputs')
+    cli.add_argument('--output-dir', default='outputs/agent',
+                     help='Local agent reports and diagnostics directory (default: outputs/agent)')
     return cli
 
 

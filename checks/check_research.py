@@ -167,6 +167,21 @@ def check_invalid_limits():
     with pytest.raises(ValueError): asyncio.run(research(None, None, WEBSITE, PRODUCT, max_operations=11))
 
 
+@pytest.mark.parametrize('known', [True, False])
+def check_failure_diagnostics_preserve_cleanup_and_hide_secrets(known):
+    from app.research_errors import BudgetExceeded
+    from evals.retail_fixtures import CANARY
+    client, stats = SyntheticMCP(), {}
+    async def decide(messages):
+        raise BudgetExceeded('model_input_budget') if known else RuntimeError(CANARY)
+    result = asyncio.run(research(client, decide, WEBSITE, PRODUCT, metrics=stats))
+    code = 'model_input_budget' if known else 'unexpected_failure'
+    assert stats['failure'] == {'code':code, 'stage':'model_decision'}
+    assert code in result['reason'] and result['status'] == 'partial'
+    assert CANARY not in json.dumps([result, stats])
+    assert stats['cleanup'] == 'closed' and client.calls[-1][0] == 'close_session'
+
+
 def check_not_found_contract():
     candidate = {'status': 'not_found', 'fields': dict.fromkeys(REQUIRED_FIELDS),
                  'product_index': None, 'offer_index': None, 'reason': 'No matching edition'}
