@@ -136,6 +136,17 @@ in `reason` and `navigation.failure`, with the failing stage and HTTP status
 when available. Raw exception messages, provider bodies and credentials are
 never included in these diagnostics.
 
+`navigation.rejections` records an allowlisted validation code and decision number
+for each rejected decision. The next retry receives a specific corrective hint,
+and an exhausted invalid-decision limit includes the last code in `reason`.
+No raw model output or exception text is logged. `requested_identity_mismatch`
+means the literal identity check failed: the current validator requires all query
+words in the observed identity, without translation or synonym matching. English
+queries against Portuguese names can therefore be conservatively rejected. This
+does not prove that the retailer lacks the product; use an observed local-language
+product name for a separate search or accept a partial result. Variant, bundle,
+seller and evidence checks are not relaxed by retry feedback.
+
 Every local agent run also saves the MCP navigation observations in the dedicated
 `outputs/scrapes/scrape-agent-<timestamp>-<run_id>.json` folder. This is the page
 data actually returned by `open_page`, `search_site`, `follow_link` and

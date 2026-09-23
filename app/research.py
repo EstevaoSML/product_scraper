@@ -8,7 +8,7 @@ import time
 from urllib.parse import unquote, urlsplit
 
 from app.policy import validate_url_structure
-from app.research_errors import ResearchFailure, failure_details
+from app.research_errors import ResearchFailure, decision_feedback, failure_details
 from app.research_contracts import (DecisionEnvelope, FinalDecision, REQUIRED_FIELDS,
                                     Report, Fact, empty_result, validate_report)
 
@@ -206,11 +206,14 @@ async def research(client, decide, website, product, *, max_decisions=8,
                     if marker in seen:
                         raise ValueError('Repeated navigation cycle')
                     seen.add(marker)
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError) as error:
                 stats['invalid'] += 1
+                rejection_code, correction = decision_feedback(error)
+                stats.setdefault('rejections', []).append({
+                    'decision': stats['decisions'], 'stage': stage, 'code': rejection_code})
                 if stats['invalid'] > max_invalid:
-                    return empty_result('Invalid decision limit reached')
-                messages.append({'role': 'system', 'content': 'Decision rejected by policy/schema/evidence checks. Use only current observed references and literal grounded values, or finish partial with null fields.'})
+                    return empty_result(f'Invalid decision limit reached [{rejection_code}]: {correction}')
+                messages.append({'role': 'system', 'content': f'Decision rejected [{rejection_code}]. {correction}'})
                 continue
             # No model-provided session IDs, arbitrary URL, selector or credential.
             messages.append({'role': 'assistant', 'content': json.dumps(decision)})

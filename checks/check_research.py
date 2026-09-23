@@ -167,6 +167,43 @@ def check_invalid_limits():
     with pytest.raises(ValueError): asyncio.run(research(None, None, WEBSITE, PRODUCT, max_operations=11))
 
 
+def check_identity_rejection_has_safe_actionable_feedback_and_cleanup():
+    candidate = report()
+    client, stats = SyntheticMCP(), {}
+    # English query term is not present in the literal synthetic Product name.
+    sequence = decisions()[:2] + [{'report':candidate}] * 3
+    sequence[0]['arguments']['query'] = PRODUCT + ' Edition'
+    messages_seen = []
+    iterator = iter(sequence)
+    async def decide(messages):
+        messages_seen.append(messages)
+        return next(iterator)
+    result = asyncio.run(research(client, decide, WEBSITE, PRODUCT + ' Edition', metrics=stats))
+    assert result['status'] == 'partial' and 'requested_identity_mismatch' in result['reason']
+    assert [r['code'] for r in stats['rejections']] == ['requested_identity_mismatch'] * 3
+    assert 'Do not translate' in messages_seen[-1][-1]['content']
+    assert stats['invalid'] == 3 and stats['cleanup'] == 'closed'
+
+
+def check_rejection_feedback_never_echoes_exception_secrets():
+    from app.research_errors import decision_feedback
+    for error in [ValueError(CANARY), KeyError(CANARY), TypeError(CANARY)]:
+        code, feedback = decision_feedback(error)
+        assert code == 'invalid_decision_schema'
+        assert CANARY not in feedback
+
+
+def check_grounding_feedback_allows_a_corrected_report():
+    bad = report()
+    bad['fields']['price']['value'] = 'invented'
+    client, stats = SyntheticMCP(), {}
+    result = asyncio.run(research(client, scripted(decisions(bad) + [{'report':report()}]),
+                                  WEBSITE, PRODUCT, metrics=stats))
+    assert result['status'] == 'complete'
+    assert stats['rejections'][0]['code'] == 'ungrounded_evidence'
+    assert stats['cleanup'] == 'closed'
+
+
 @pytest.mark.parametrize('known', [True, False])
 def check_failure_diagnostics_preserve_cleanup_and_hide_secrets(known):
     from app.research_errors import BudgetExceeded
