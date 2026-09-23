@@ -116,7 +116,7 @@ class OpenAIDecider:
                                        'strict': True, 'schema': DecisionEnvelope.model_json_schema()}}}
             bound = len(json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()) + 1024
             remaining = self.budget.max_input - self.budget.input_tokens
-            if bound > remaining and current:
+            if current:
                 # Fit only the current observation; trusted instructions/schema
                 # and the user's exact task are never truncated.
                 fitted = [dict(item) for item in inputs]
@@ -130,13 +130,20 @@ class OpenAIDecider:
                     query = task.get('product', '') if isinstance(task, dict) else ''
                 except (ValueError, IndexError):
                     query = ''
+                stage = current[0].get('research_stage', 'homepage')
+                # Keep 8k conservative input units for later extraction.
+                allowance = remaining - (8000 if stage != 'product' else 0)
+                view_limit = allowance - overhead + wire_size('')
+                if stage != 'product':
+                    view_limit = min(view_limit, 4000 if stage == 'homepage' else 7000)
                 view = compact_observation(current[0]['content'], query if isinstance(query, str) else '',
-                                           remaining - overhead + wire_size(''))
+                                           view_limit, stage=stage)
                 if view is not None:
                     fitted[index]['content'] += view
                     self.context_was_compacted = True
                 else:
-                    raise BudgetExceeded('model_input_budget')
+                    # Non-observation tool error text stays bounded by reserve.
+                    body['input'] = inputs
                 bound = len(json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()) + 1024
             reservation = self.budget.reserve(bound, output_limit)
             # No SDK automatic retries; all attempts consume explicit budgets.

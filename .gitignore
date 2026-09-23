@@ -23,6 +23,7 @@ logs/
 *.tfstate.*
 *.tfplan
 *.tfvars
+outputs
 backend.hcl
 crash.log
 !deploy/terraform/verification/*.tftest.hcl

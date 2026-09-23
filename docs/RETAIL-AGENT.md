@@ -94,7 +94,7 @@ Unknown usage retains the full reservation. This can stop early. Rates are
 standard text input USD 0.25/million and output USD 2.00/million, checked 2026-09-21
 against [GPT-5 mini documentation](https://developers.openai.com/api/docs/models/gpt-5-mini).
 Reverify rates before deploying: local accounting is not a provider billing lock.
-The selected model remains `gpt-5-mini`; prompt version is `retail-research-v1`.
+The selected model remains `gpt-5-mini`; prompt version is `retail-research-v2`.
 
 A 60-second Blob lease is renewed every 20 seconds, acquired before any paid/model
 or MCP call. A busy lease fails fast. Lost renewal cancels work and waits for its
@@ -149,12 +149,18 @@ Storage and do not archive page observations by default.
 token allowance before dispatch. Zero model calls with one navigation operation
 can indicate this preflight stop; it does not establish an invalid API key.
 Increasing the USD cap does not increase the input token limit.
-Oversized snapshots now receive a deterministic prompt view sized to the remaining
-input allowance, including JSON escaping, instructions and schema overhead.
-Search fields and query-matching links are prioritized. Product records are kept
-whole as an unchanged prefix, preserving product/offer indexes; visible excerpts
-are exact substrings. The original snapshot remains the evidence validator's
-source. Omission is explicit and can reduce recall. After any such compaction,
+Every snapshot is filtered before dispatch, using the trusted navigation stage:
+homepages expose search fields; results expose search fields and query-matching
+links; product pages prioritize every product's identity and complete offers,
+without navigation menus. Product/offer indexes remain unchanged. Image URLs and
+other unrelated product attributes are omitted. Relevant visible lines and their
+neighbors retain variant, seller, price and contradictory evidence as exact excerpts.
+Navigation views are capped at 4,000/7,000 serialized bytes and leave 8,000 input
+budget units for extraction; the request schema/instructions are also accounted.
+`product_evidence_budget` stops extraction before dispatch if essential product
+records or selected visible evidence cannot fit, instead of sending empty products.
+The original snapshot remains the evidence validator's source. Filtering can reduce
+recall and does not establish semantic correctness. After filtering,
 `not_found` is downgraded to `partial`; omitted evidence does not establish absence.
 If even the mandatory context cannot fit, `model_input_budget` still stops dispatch.
 No token/cost cap is raised and no extra model request is used for compaction.

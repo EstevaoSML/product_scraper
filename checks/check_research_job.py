@@ -27,6 +27,7 @@ def setup_job(monkeypatch):
     class HTTP(Context):
         def __init__(self,**kwargs): recorded.setdefault('http_options',[]).append(kwargs)
         async def post(self,url,**kwargs):
+            recorded.setdefault('requests', []).append(kwargs['json'])
             assert kwargs['headers'] == {'Authorization':'Bearer '+CANARY}
             assert CANARY not in json.dumps(kwargs['json'])
             return response(decision=next(sequence))
@@ -57,6 +58,11 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     client,recorded = setup_job(monkeypatch)
     result = asyncio.run(research_job.run(arguments(tmp_path)))
     assert result['status']=='complete'
+    views = [json.loads(next(m['content'].split('\n',1)[1] for m in request['input']
+             if m['content'].startswith('UNTRUSTED_PAGE_DATA\n'))) for request in recorded['requests']]
+    assert [v['research_stage'] for v in views] == ['homepage','results','product']
+    assert views[-1]['products'][0]['offers']['seller']['name'] == 'Loja Azul'
+    assert views[-1]['elements'] == []
     saved = json.loads(next(tmp_path.glob('research-*.json')).read_text())
     assert saved==result
     assert client.calls[-1][0]=='close_session'

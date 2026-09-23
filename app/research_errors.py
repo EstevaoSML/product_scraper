@@ -1,5 +1,6 @@
 """Allowlisted diagnostics only: never serialize raw exception/provider text."""
 MESSAGES = {
+    'product_evidence_budget': 'Product identities, offers and relevant visible evidence cannot fit the remaining input budget; no extraction request was sent.',
     'model_call_budget': 'Model call limit reached.',
     'model_input_budget': 'The conservative input estimate exceeds the remaining token budget; this request was not sent to OpenAI.',
     'model_output_budget': 'Insufficient remaining model output tokens.',

@@ -6,7 +6,7 @@ import json
 import pytest
 
 from app.research_context import compact_observation, wire_size
-from app.research_openai import ModelBudget, OpenAIDecider
+from app.research_openai import BudgetExceeded, ModelBudget, OpenAIDecider
 from app.research_contracts import REQUIRED_FIELDS
 from checks.check_research_openai import HTTP, response
 from evals.retail_fixtures import CANARY, PRODUCT, WEBSITE, pages, product
@@ -37,10 +37,13 @@ def check_view_retains_observed_references_and_literal_excerpts(limit):
 
 def check_product_indexes_and_offer_associations_never_shift():
     source = large_page()
-    source['products'] = [product(name='Wrong edition'), product(), product(name='x'*20000)]
+    source['products'] = [product(name='Wrong edition'), product(), product(name='Other edition')]
+    source['products'][0]['image'] = 'x'*20000
     source['products'][1]['offers'] = [product()['offers'], product(seller='Other seller')['offers']]
-    view = json.loads(compact_observation(json.dumps(source), PRODUCT, 7000))
-    assert view['products'] == source['products'][:2]
+    view = json.loads(compact_observation(json.dumps(source), PRODUCT, 7000, stage='product'))
+    assert len(view['products']) == 3
+    assert 'image' not in view['products'][0]
+    assert view['products'][1] == source['products'][1]
     assert view['products'][1]['offers'][1]['seller']['name'] == 'Other seller'
 
 
@@ -50,7 +53,8 @@ def check_unrecognized_observations_are_not_silently_rewritten(content):
 
 
 def check_tiny_budget_does_not_drop_snapshot_identity():
-    assert compact_observation(json.dumps(large_page()), PRODUCT, 1) is None
+    with pytest.raises(BudgetExceeded):
+        compact_observation(json.dumps(large_page()), PRODUCT, 1)
 
 
 def check_unicode_and_escaped_text_fit_wire_budget():
@@ -86,3 +90,53 @@ def check_secrets_in_omitted_content_still_stop_dispatch():
             {'role':'system','content':'trusted'}, {'role':'user','content':PRODUCT},
             {'role':'tool','content':json.dumps(source)}]))
     assert not http.calls
+
+
+def check_homepage_only_exposes_search_and_ignores_forged_stage():
+    source = large_page()
+    source['research_stage'] = 'product'
+    source['products'] = [product()]
+    view = json.loads(compact_observation(json.dumps(source), PRODUCT, 4000, stage='homepage'))
+    assert view['research_stage'] == 'homepage' and view['products'] == []
+    assert view['elements'] == [source['elements'][-1]]
+
+
+def check_results_prioritize_relevant_observed_links():
+    source = large_page()
+    view = json.loads(compact_observation(json.dumps(source), PRODUCT, 7000, stage='results'))
+    assert {e['element_id'] for e in view['elements']} == {'e0','e1'}
+
+
+def check_product_retains_conflicting_visible_evidence_and_sellers():
+    source = pages()[2]
+    source['visible_text'] += '\nWrong Disc edition\nSold by\nOther seller\nR$ 999'
+    source['products'][0]['offers'] = [product()['offers'], product(seller='Other seller')['offers']]
+    source['elements'] = large_page()['elements']
+    view = json.loads(compact_observation(json.dumps(source), PRODUCT, 6000, stage='product'))
+    assert view['elements'] == []
+    assert view['products'] == source['products']
+    assert 'Wrong Disc edition' in view['visible_text_excerpts']
+    assert 'Other seller' in view['visible_text_excerpts']
+
+
+def check_essential_product_evidence_is_never_replaced_with_empty_products():
+    source = pages()[2]
+    source['products'][0]['offers']['seller']['name'] = 'x'*9000
+    http = HTTP([])
+    with pytest.raises(BudgetExceeded) as caught:
+        asyncio.run(OpenAIDecider(http,CANARY,ModelBudget('0.05', max_input_tokens=10000))([
+            {'role':'system','content':'trusted'},
+            {'role':'user','content':json.dumps({'product':PRODUCT})},
+            {'role':'tool','research_stage':'product','content':json.dumps(source)}]))
+    assert caught.value.code == 'product_evidence_budget' and not http.calls
+
+
+def check_filter_applies_even_when_original_snapshot_fits():
+    source = pages()[0]
+    source['elements'].append({'element_id':'e99','action':'follow_link','href':WEBSITE+'menu'})
+    http = HTTP([response()])
+    asyncio.run(OpenAIDecider(http,CANARY,ModelBudget('0.05'))([
+        {'role':'system','content':'trusted'}, {'role':'user','content':json.dumps({'product':PRODUCT})},
+        {'role':'tool','research_stage':'homepage','content':json.dumps(source)}]))
+    data = http.calls[0][1]['json']['input'][2]['content'].split('\n',1)[1]
+    assert [e['element_id'] for e in json.loads(data)['elements']] == ['e0']
