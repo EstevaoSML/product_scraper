@@ -124,46 +124,11 @@ The provider **must support CONNECT to an IP address**, because the gateway pins
 
 ## Azure Container Apps deployment
 
-The included ARM template `deploy/main.json` runs API, Chrome, and gateway as three containers in one Container App, with a total of 2 vCPU / 4 GiB, HTTPS ingress only on the API, Key Vault-backed authentication, health probes, and at most one replica. It scales to zero, so a first call can be slow. For scheduled ingestion with predictable latency, set `minReplicas` to 1 (ongoing compute cost).
-
-This is an Azure Container Apps service, not an Azure Functions image. Fabric orchestrates requests to it; do not try to upload the Compose file as a Fabric notebook environment. Azure supports [multiple containers in one app](https://learn.microsoft.com/en-us/azure/container-apps/containers), and the deployment uses its [ARM schema](https://learn.microsoft.com/en-us/azure/container-apps/azure-resource-manager-api-spec).
-
-**Cloud isolation difference:** containers in the same Container App share networking. The template uses `localhost` for the UC worker and the gateway and does not reproduce Compose's internal network barrier. Proxy validation still runs for configured browser traffic, but it is not an enforced egress boundary against bypass or browser compromise. For untrusted/multi-tenant use, separate the browser into its own network and enforce firewall/UDR egress through a separately hosted gateway. Also separate the identity with Key Vault access from the browser workload. Review this before exposing the service to additional users. The supplied template is an authenticated single-operator starting point.
-
-After local smoke tests pass, prepare these existing Azure resources in your subscription:
-
-1. Resource group and Container Apps environment in the intended region.
-2. Azure Container Registry (ACR).
-3. User-assigned managed identity with `AcrPull` on that registry (for an ACR using standard RBAC registry permissions).
-4. Key Vault containing a new random secret named `scraper-api-key`, at least 32 characters; give the identity `Key Vault Secrets User` and ensure vault networking permits the app to retrieve it.
-5. Azure CLI with Container Apps support and permission to build in ACR/deploy to the resource group. Role assignments and network permission changes may take time to propagate.
-
-Build the API remotely in ACR from this repository (this incurs Azure usage):
-
-```powershell
-az acr build --registry YOUR_ACR_NAME --image html-scraper:v1 .
-az acr build --registry YOUR_ACR_NAME --image html-scraper-browser:v1 --file Dockerfile.browser .
-Copy-Item .\deploy\parameters.example.json .\deploy\parameters.local.json
-```
-
-Edit `parameters.local.json` with your resource IDs, registry login server, API image reference, and Key Vault **secret URL**, never the secret value. Build Dockerfile.browser, push the resulting custom image to your ACR, and set the required `chromeImage` parameter to that image reference. The public Selenium image alone cannot run the UC worker.
-
-```powershell
-az deployment group validate --resource-group YOUR_RESOURCE_GROUP `
-    --template-file .\deploy\main.json --parameters '@deploy/parameters.local.json'
-az deployment group create --resource-group YOUR_RESOURCE_GROUP `
-    --template-file .\deploy\main.json --parameters '@deploy/parameters.local.json'
-```
-
-The deployment output contains the HTTPS endpoint. Test `/readyz`, then call `/scrape` using the cloud Key Vault key. The ARM file contains no secret value. It does not create the prerequisite resources, assign roles, configure private ingress/egress, or purchase a proxy. The cloud gateway is direct by default; to chain a proxy, add a second Key Vault-backed secret and map it to `UPSTREAM_PROXY_URL` on `egress` only.
-
-For multiple clients, add Entra authentication/API Management and central rate limits. The app currently validates `X-API-Key`, not Entra access tokens. Retain the shared key until the application authentication is deliberately changed. There is no deployment executed by this repository setup.
+The supported cloud deployment uses Terraform under `deploy/terraform`. It creates the Container Apps environment, separate API and browser applications, ACR, managed identities, Key Vault integration, private networking and Log Analytics. Follow the [Container Apps deployment guide](deploy/terraform/README.md).
 
 ## Microsoft Fabric
 
-Preferred first integration: paste `examples/fabric_notebook.py` into a **PySpark notebook with a Lakehouse attached**, fill in the API and vault addresses, and grant the notebook's executing identity permission to read that secret. The example gets the key via [NotebookUtils credentials](https://learn.microsoft.com/en-us/fabric/data-engineering/notebook-utilities) and saves JSON under `/lakehouse/default/Files/scrapes/` without printing HTML or the key.
-
-Alternatively use a Fabric pipeline **Web activity**: POST to `/scrape`, set `Content-Type: application/json` and `X-API-Key` from your secure configuration, and use `{"url":"https://example.com","wait_seconds":5}` as the body. Enable secure input/output handling for credentials and captured content. Never store a literal key in an exported pipeline definition.
+Use a Fabric pipeline **Web activity**: POST to `/scrape`, set `Content-Type: application/json` and `X-API-Key` from your secure configuration, and use `{"url":"https://example.com","wait_seconds":5}` as the body. Enable secure input/output handling for credentials and captured content. Never store a literal key in an exported pipeline definition.
 
 Fabric's [Web activity response limit is 4 MB](https://learn.microsoft.com/en-us/fabric/data-factory/web-activity). The API limits the actual UTF-8 encoded JSON to 3.5 MB and returns 413 instead of silently truncating HTML. If larger pages become necessary, extend the API to store results in Blob/ADLS and return a small object reference; that storage mode is not yet implemented. A notebook also remains subject to this API's 3.5 MB limit.
 

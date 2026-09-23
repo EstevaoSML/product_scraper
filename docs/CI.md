@@ -38,7 +38,7 @@ After the first successful hosted run, configure branch protection to require th
 
 ## AI/agent evaluation requirements
 
-A host-only GPT-5 mini runtime now exists. `evals/retail_fixtures.py` and `checks/check_research*.py` exercise its real loop/adapter with deterministic synthetic MCP and HTTP responses. `scripts/evaluate_research.py` runs the versioned corpus offline; `--live-model --max-cost-usd ...` invokes GPT-5 mini in an explicitly paid manual evaluation. The original `evals/cases.json` remains a legacy HTML fixture sketch, not the navigation evaluation corpus. Mock tests do not measure real-model accuracy or general injection resistance. No passing live-model baseline is claimed.
+A host-only GPT-5 mini runtime now exists. `evals/retail_fixtures.py` and `checks/check_research*.py` exercise its real loop/adapter with deterministic synthetic MCP and HTTP responses. `scripts/evaluate_research.py` runs the versioned corpus offline; `--live-model --max-cost-usd ...` invokes GPT-5 mini in an explicitly paid manual evaluation. Mock tests do not measure real-model accuracy or general injection resistance. No passing live-model baseline is claimed.
 
 The evaluation contract in `evals/AGENT-EVALUATION.md` requires:
 

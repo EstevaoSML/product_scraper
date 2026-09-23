@@ -99,7 +99,7 @@ Check API `/readyz`, MCP tools/list, then open/inspect/close a session on a publ
 
 No deployment has been performed by this coding task. If you already applied the old stack yourself, **do not blindly apply this configuration**. Back up remote state and inspect a saved plan. It removes the Function, Functions plan/storage and old identities; changing environment load-balancer type can replace the environment and its dependent apps. It also changes the backend from a three-container REST API app to a two-container private browser worker.
 
-Use a new globally unique name and a separate backend state key for a parallel rollout when avoiding downtime. Seed new vault secrets, build images, validate the new MCP endpoint, switch agents, then separately review retirement of the old stack. Existing browser sessions cannot migrate. `deploy/functions`, `app/functions_app.py`, `scripts/package_functions.py` and `deploy/main.json` are legacy alternatives; do not use them for this deployment.
+Use a new globally unique name and a separate backend state key for a parallel rollout when avoiding downtime. Seed new vault secrets, build images, validate the new MCP endpoint, switch agents, then separately review retirement of the old stack. Existing browser sessions cannot migrate.
 
 ## Logs, rotation and maintenance
 
