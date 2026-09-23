@@ -1,6 +1,8 @@
 """Job integration with actual loop/adapter, fake external transports only."""
 import asyncio
+import base64
 import json
+from pathlib import Path
 import re
 from types import SimpleNamespace
 
@@ -22,6 +24,12 @@ def setup_job(monkeypatch):
     import mcp.client.streamable_http as stream
     from checks.check_research_openai import response
     client = SyntheticMCP()
+    client.pages[-1]['page_info'] = {
+        'product_name': 'Console Nova PS5 Digital Edition 1TB',
+        'description': 'Console PlayStation 5 digital com armazenamento de 1TB.',
+        'is_product': True,
+        'image_base64': base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode(),
+    }
     sequence = iter(decisions())
     recorded = {}
     class HTTP(Context):
@@ -73,12 +81,15 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     diagnostics = next(tmp_path.glob('diagnostics-*.json')).read_text()
     assert json.loads(diagnostics) == json.loads(output)
     assert CANARY not in diagnostics and 'SYNTHETIC_MCP_CREDENTIAL' not in diagnostics
-    scrape_path = next((tmp_path/'scrapes').glob('scrape-agent-*.json'))
+    scrape_path = next((tmp_path/'scrapes').glob('scrape-*.json'))
     scrape = json.loads(scrape_path.read_text())
-    assert scrape['run_id'] == json.loads(output)['run_id']
-    assert scrape['website'] == WEBSITE and scrape['product'] == PRODUCT
-    assert len(scrape['observations']) == 3
-    assert all('session_id' not in page and 'request_id' not in page for page in scrape['observations'])
+    assert set(scrape) == {'url', 'has_ps5_info', 'ps5_info'}
+    assert scrape['has_ps5_info'] is True
+    assert scrape['url'] == client.pages[-1]['url']
+    assert scrape['ps5_info']['product_name'] == 'Console Nova PS5 Digital Edition 1TB'
+    assert scrape['ps5_info']['description'].startswith('Console PlayStation 5')
+    image = tmp_path/'scrapes'/'images'/Path(scrape['ps5_info']['image_dir']).name
+    assert image.read_bytes() == b'\x89PNG\r\n\x1a\nfixture'
     assert json.loads(output)['scrape_output'] == str(scrape_path)
 
 
@@ -87,6 +98,27 @@ def check_local_key_file(monkeypatch,tmp_path):
     key = tmp_path/'synthetic-key.txt'
     key.write_text('SYNTHETIC_MCP_CREDENTIAL')
     assert asyncio.run(research_job.run(arguments(tmp_path,key_file=str(key))))['status']=='complete'
+
+
+def check_simple_scrape_without_product_has_fixed_null_schema(tmp_path):
+    snapshots = [{'url': WEBSITE+'search', 'page_info': {
+        'product_name': 'Search results', 'description': 'PS5 offers',
+        'is_product': False, 'image_base64': base64.b64encode(b'not-a-png').decode()}}]
+    path = research_job.save_simple_scrape(snapshots, tmp_path, '20260923T120000000000Z-'+'a'*32, WEBSITE)
+    saved = json.loads(path.read_text())
+    assert saved == {'url': WEBSITE+'search', 'has_ps5_info': False,
+                     'ps5_info': {'image_dir': None, 'product_name': None, 'description': None}}
+    assert not (tmp_path/'images').exists()
+
+
+def check_simple_scrape_saves_image_larger_than_former_limit(tmp_path):
+    png = b'\x89PNG\r\n\x1a\n' + b'x' * 250_000
+    snapshots = [{'url': WEBSITE+'console/p', 'page_info': {
+        'product_name': 'Console PS5 Digital Edition', 'description': 'Produto',
+        'is_product': True, 'image_base64': base64.b64encode(png).decode()}}]
+    path = research_job.save_simple_scrape(snapshots, tmp_path, '20260923T120000000000Z-'+'b'*32, WEBSITE)
+    saved = json.loads(path.read_text())
+    assert Path(saved['ps5_info']['image_dir']).read_bytes() == png
 
 
 def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,capsys):
@@ -103,7 +135,8 @@ def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,c
     folder = tmp_path/'outputs'/'agent'
     assert len(list(folder.glob('research-*.json'))) == 2
     assert len(list(folder.glob('diagnostics-*.json'))) == 2
-    assert len(list((tmp_path/'outputs'/'scrapes').glob('scrape-agent-*.json'))) == 2
+    assert len(list((tmp_path/'outputs'/'scrapes').glob('scrape-*.json'))) == 2
+    assert len(list((tmp_path/'outputs'/'scrapes'/'images').glob('ps5-*.png'))) == 2
     assert not list((tmp_path/'outputs').glob('*.json'))
     runs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert runs[0]['run_id'] != runs[1]['run_id']

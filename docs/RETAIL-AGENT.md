@@ -154,14 +154,20 @@ does not prove that the retailer lacks the product; use an observed local-langua
 product name for a separate search or accept a partial result. Variant, bundle,
 seller and evidence checks are not relaxed by retry feedback.
 
-Every local agent run also saves the MCP navigation observations in the dedicated
-`outputs/scrapes/scrape-agent-<timestamp>-<run_id>.json` folder. This is the page
-data actually returned by `open_page`, `search_site`, `follow_link` and
-`inspect_page`; it is not a second `scrape_html` call. Session capabilities and
-request IDs are omitted. The matching diagnostics record includes `scrape_output`.
-Treat these files as untrusted and potentially sensitive website data and apply a
-retention policy. Azure jobs continue storing the final report in private Blob
-Storage and do not archive page observations by default.
+Every completed local agent run saves a compact result at
+`outputs/scrapes/scrape-<timestamp>-<run_id>.json`. Its only top-level fields are
+`url`, `has_ps5_info` and `ps5_info`. The nested object contains `image_dir`,
+`product_name` and `description`; missing values are null. A rendered product
+image is saved as `outputs/scrapes/images/ps5-<timestamp>-<run_id>.png` when
+the browser identifies a PS5 product page and the rendered PNG is available.
+There is no separate 200 KB image limit; the complete navigation result remains
+subject to the MCP response-size safety envelope.
+The host strips image bytes from model context, never saves session capabilities,
+and records the JSON path as `scrape_output` in diagnostics. Search refinements
+and pagination links are hidden from the model after search so it must choose an
+observed product result. Treat saved descriptions and images as untrusted website
+data. Azure jobs continue storing the final report in private Blob Storage and do
+not archive page observations or images by default.
 
 `model_input_budget` means the conservative input estimate exceeded the remaining
 token allowance before dispatch. Zero model calls with one navigation operation

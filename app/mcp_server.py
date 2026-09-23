@@ -1,4 +1,5 @@
 """MCP transport for the existing scraper service, using the official SDK."""
+import copy
 import json
 import os
 import uuid
@@ -55,8 +56,11 @@ def create_server(request_model, execute, max_response_bytes, navigate=None):
             response = await run_in_threadpool(execute, payload) if params.name == "scrape_html" else await run_in_threadpool(navigate, params.name, payload)
             data = json.loads(response.body)
             data["request_id"] = request_id
+            text_data = copy.deepcopy(data)
+            if isinstance(text_data.get("page_info"), dict):
+                text_data["page_info"].pop("image_base64", None)
             result = CallToolResult(structured_content=data,
-                                    content=[TextContent(type="text", text=json.dumps(data, ensure_ascii=False))])
+                                    content=[TextContent(type="text", text=json.dumps(text_data, ensure_ascii=False))])
             # Account for text + structured HTML, including escaping and RPC envelope.
             if len(result.model_dump_json(by_alias=True).encode()) > max_response_bytes - 16_384:
                 return error(413, "response_too_large", "Page exceeds MCP response limit; use a narrower page or the REST API")

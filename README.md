@@ -18,7 +18,7 @@ docker compose up --build -d
 .\scripts\smoke.ps1
 ```
 
-The first run builds a custom browser image. The smoke script waits for the UC worker, requests `https://example.com`, and writes `outputs/scrapes/scrape_<UTC-timestamp>_<unique-id>.json`. Agent navigation observations use the same dedicated folder; agent reports remain in `outputs/agent`. If PowerShell blocks scripts, review the files and invoke them with a process-scoped policy according to your machine's policy. Do not weaken the system-wide policy.
+The first run builds a custom browser image. The smoke script waits for the UC worker, requests `https://example.com`, and writes `outputs/scrapes/scrape_<UTC-timestamp>_<unique-id>.json`. Local PS5 agent runs write a compact `url/has_ps5_info/ps5_info` JSON in the same folder and save rendered product images under `outputs/scrapes/images`; agent reports remain in `outputs/agent`. If PowerShell blocks scripts, review the files and invoke them with a process-scoped policy according to your machine's policy. Do not weaken the system-wide policy.
 
 To try your product page:
 

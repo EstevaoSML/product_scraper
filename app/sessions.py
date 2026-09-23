@@ -11,6 +11,7 @@ import threading
 import time
 
 from fastapi import HTTPException
+from app.navigation import MAX_NAVIGATION_BYTES
 
 
 class ProcessSession:
@@ -30,7 +31,7 @@ class ProcessSession:
 
     def read_answers(self):
         while True:
-            line = self.process.stdout.readline(500_001)
+            line = self.process.stdout.readline(MAX_NAVIGATION_BYTES + 1)
             if not line:
                 try:
                     self.answers.put_nowait(b'')
@@ -41,14 +42,14 @@ class ProcessSession:
                 self.answers.put_nowait(line)
             except queue.Full:
                 return
-            if len(line) > 500_000:
+            if len(line) > MAX_NAVIGATION_BYTES:
                 return
 
     def call(self, action, arguments, timeout):
         self.process.stdin.write(json.dumps({'action': action, 'arguments': arguments}).encode() + b'\n')
         self.process.stdin.flush()
         line = self.answers.get(timeout=timeout)
-        if not line or len(line) > 500_000:
+        if not line or len(line) > MAX_NAVIGATION_BYTES:
             raise ValueError('Invalid browser protocol')
         result = json.loads(line)
         if not isinstance(result, dict):

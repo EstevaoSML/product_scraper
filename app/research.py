@@ -147,7 +147,16 @@ async def research(client, decide, website, product, *, max_decisions=8,
         observation = {k: v for k, v in data.items() if k not in ('session_id', 'request_id')}
         if on_snapshot is not None:
             on_snapshot(copy.deepcopy(observation))
-        messages.append({'role': 'tool', 'content': json.dumps(observation, ensure_ascii=False)})
+        model_observation = copy.deepcopy(observation)
+        # Binary image data is for host-side persistence, never model context.
+        if isinstance(model_observation.get('page_info'), dict):
+            model_observation['page_info'].pop('image_base64', None)
+        if searched:
+            current_path = urlsplit(data['url']).path.rstrip('/')
+            model_observation['elements'] = [element for element in model_observation['elements']
+                if element.get('action') != 'follow_link'
+                or urlsplit(element.get('href', '')).path.rstrip('/') != current_path]
+        messages.append({'role': 'tool', 'content': json.dumps(model_observation, ensure_ascii=False)})
         return data
 
     try:
@@ -200,6 +209,8 @@ async def research(client, decide, website, product, *, max_decisions=8,
                         if not searched:
                             raise ValueError('Search before following results')
                         safe_retail_url(matches[0]['href'], website)
+                        if urlsplit(matches[0]['href']).path.rstrip('/') == urlsplit(page['url']).path.rstrip('/'):
+                            raise ValueError('Search refinements and pagination are not product results')
                         marker = ('link', matches[0]['href'])
                     else:
                         marker = ('search', page['url'], product)
@@ -226,10 +237,10 @@ async def research(client, decide, website, product, *, max_decisions=8,
                     messages.append({'role': 'tool', 'content': 'Refresh with inspect_page once or finish partial.'})
                     continue
                 return empty_result('Navigation failed or was rejected')
-            page = remember(result)
-            require_inspect = False
             searched = searched or tool == 'search_site'
             followed = followed or tool == 'follow_link'
+            page = remember(result)
+            require_inspect = False
         if page.get('status') == 'blocked':
             return empty_result('Retailer blocked access', 'blocked')
         return empty_result('Decision budget exhausted')

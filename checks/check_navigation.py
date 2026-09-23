@@ -19,8 +19,8 @@ KEY = 'navigation-key-' * 4
 
 
 class Node:
-    def __init__(self, href=None):
-        self.href, self.typed = href, []
+    def __init__(self, href=None, screenshot=b''):
+        self.href, self.typed, self.screenshot_as_png = href, [], screenshot
     def is_displayed(self): return True
     def is_enabled(self): return True
     def clear(self): self.typed.clear()
@@ -32,6 +32,7 @@ class Driver:
     def __init__(self):
         self.current_url = 'https://shop.example/'
         self.field, self.link = Node(), Node('https://shop.example/ps5')
+        self.image = Node(screenshot=b'\x89PNG\r\n\x1a\nfixture')
         self.form_url = self.current_url
         self.text = 'Sony PS5 Digital Edition BRL 3000 in stock'
         self.scripts = [json.dumps({'@graph': [{'@type': 'Product', 'name': 'PS5'}]})]
@@ -45,7 +46,11 @@ class Driver:
         return {'title': 'Fixture', 'visible_text': self.text, 'text_truncated': False,
                 'jsonld': self.scripts[:], 'rows': [
                     {'node': self.field, 'tag': 'input', 'href': None},
-                    {'node': self.link, 'tag': 'a', 'href': self.link.href}]}
+                    {'node': self.link, 'tag': 'a', 'href': self.link.href}],
+                'page_info': {'product_name': 'Sony PS5 Digital Edition',
+                              'description': 'Console digital', 'is_product': True},
+                'product_image': {'node': self.image, 'alt': 'Sony PS5',
+                                  'src': 'https://cdn.example/ps5.png'}}
 
 
 @pytest.fixture
@@ -109,6 +114,7 @@ def check_search_navigation_snapshots_and_evidence(page):
     assert result['untrusted_content'] is True
     result = page.execute('follow_link', action_args(page, 'e1'))
     assert result['url'].endswith('/ps5') and result['pages_remaining'] == 4
+    assert result['page_info']['image_base64']
     assert page.execute('inspect_page', {})['visible_text'].startswith('Sony')
 
 
@@ -157,6 +163,14 @@ def check_malformed_structured_data_and_blocked_content(page):
 def check_snapshot_structured_data_limit(page, monkeypatch):
     monkeypatch.setattr(browser, 'MAX_SNAPSHOT', 10)
     assert page.snapshot()['structured_data_truncated']
+
+
+def check_product_image_larger_than_former_limit_is_retained(page):
+    import base64
+    png = b'\x89PNG\r\n\x1a\n' + b'x' * 250_000
+    page.driver.image.screenshot_as_png = png
+    result = page.snapshot()
+    assert base64.b64decode(result['page_info']['image_base64']) == png
 
 
 class Process:
@@ -256,7 +270,7 @@ def check_process_protocol_has_bounded_output_and_timeout():
     process.read_answers()
     assert process.call('inspect_page', {}, 0.01) == {'ok': True}
     with pytest.raises(queue.Empty): process.call('inspect_page', {}, 0.01)
-    for value in (b'', b'[]', b'x'*500001):
+    for value in (b'', b'[]', b'x'*(sessions.MAX_NAVIGATION_BYTES+1)):
         process.answers.put(value)
         with pytest.raises(ValueError): process.call('inspect_page', {}, 0.01)
 
@@ -366,7 +380,8 @@ def check_navigation_forwarding_separate_key_no_redirect(monkeypatch):
         main.execute_navigation('open_page', OpenPage(url='https://shop.example'))
     assert error.value.detail == 'Browser failed'
     opener.open.side_effect = None
-    for bad in (b'[]', b'{}', b'x'*600001):
+    from app.navigation import MAX_NAVIGATION_BYTES
+    for bad in (b'[]', b'{}', b'x'*(MAX_NAVIGATION_BYTES+1)):
         opener.open.return_value.__enter__.return_value.read.return_value = bad
         with pytest.raises(HTTPException): main.execute_navigation('open_page', OpenPage(url='https://shop.example'))
 
@@ -386,11 +401,14 @@ def check_mcp_navigation_discovery_and_dispatch(monkeypatch):
     monkeypatch.delenv('API_KEY_FILE', raising=False)
     monkeypatch.setenv('API_KEY', MCP_KEY)
     navigate = Mock(return_value=Response(json.dumps({'session_id': 's'*43, 'snapshot_id': 'a'*32,
-        'url': 'https://shop.example', 'visible_text': 'untrusted', 'elements': []}), media_type='application/json'))
+        'url': 'https://shop.example', 'visible_text': 'untrusted', 'elements': [],
+        'page_info': {'image_base64': 'large-image-data'}}), media_type='application/json'))
     monkeypatch.setattr(main, 'execute_navigation', navigate)
     with TestClient(main.app, base_url='http://127.0.0.1:8000') as client:
         assert set(TOOLS).issubset({tool['name'] for tool in rpc(client).json()['result']['tools']})
         response = rpc(client, 'tools/call', {'name': 'open_page', 'arguments': {'url': 'https://shop.example'}})
         assert not response.json()['result'].get('isError')
         assert response.json()['result']['structuredContent']['visible_text'] == 'untrusted'
+        assert response.json()['result']['structuredContent']['page_info']['image_base64'] == 'large-image-data'
+        assert 'large-image-data' not in response.json()['result']['content'][0]['text']
         assert navigate.call_args.args[0] == 'open_page'

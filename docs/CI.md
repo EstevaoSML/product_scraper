@@ -71,7 +71,7 @@ The URL-policy tests distinguish missing host permission, DNS failures and priva
 
 ## Agent navigation and Container Apps checks
 
-`checks/check_navigation.py` tests observed element references, search/link restrictions, session ownership and expiry, bounded output, process-group cleanup, separate backend credentials and MCP/REST dispatch. `checks/check_research.py` tests the provider-neutral decision loop with deterministic fake decisions: evidence quotes, missing fields, cross-listing evidence, bounded tools and cleanup. These are not real-model accuracy or adversarial robustness evaluations.
+`checks/check_navigation.py` tests observed element references, search/link restrictions, bounded rendered-image capture, session ownership and expiry, bounded output, process-group cleanup, separate backend credentials and MCP/REST dispatch. `checks/check_research.py` tests the provider-neutral decision loop with deterministic fake decisions: evidence quotes, missing fields, cross-listing evidence, rejection of pagination/search refinements, bounded tools and cleanup. Job tests verify the compact PS5 JSON contract, unique filenames and PNG persistence. These are not real-model accuracy or adversarial robustness evaluations.
 
 Container CI now opens/inspects/closes a live MCP browser session and runs `scripts/navigation_fixture.py` inside Chrome. That fixture injects a fixed synthetic retail DOM on public example.com and verifies real form search, link navigation, Product JSON-LD and stale-reference rejection. It does not disable URL policy, and it is not a retailer-specific acceptance test.
 

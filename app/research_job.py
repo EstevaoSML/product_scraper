@@ -1,11 +1,13 @@
 """Manual Azure Container Apps Job entry point; also usable locally."""
 import argparse
 import asyncio
+import base64
 from datetime import datetime, timezone
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import uuid
 from urllib.parse import urlsplit
@@ -13,6 +15,48 @@ from urllib.parse import urlsplit
 from app.research import PROMPT_VERSION, research, safe_retail_url
 from app.research_openai import ModelBudget, OpenAIDecider, SecretGuard
 from app.research_storage import exclusive_research
+
+
+PS5 = re.compile(r'\b(?:ps\s*5|playstation\s*5)\b', re.I)
+
+
+def save_simple_scrape(snapshots, scrape_folder, file_id, fallback_url):
+    """Persist only the requested PS5 summary and a bounded rendered image."""
+    selected = None
+    for page in reversed(snapshots):
+        info = page.get('page_info')
+        if (isinstance(info, dict) and info.get('is_product') is True
+                and isinstance(info.get('product_name'), str)
+                and PS5.search(info['product_name'])):
+            selected = page
+            break
+    url = selected.get('url') if selected else (snapshots[-1].get('url') if snapshots else fallback_url)
+    product = {'image_dir': None, 'product_name': None, 'description': None}
+    folder = Path(scrape_folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    if selected:
+        info = selected['page_info']
+        product['product_name'] = info['product_name'].strip() or None
+        description = info.get('description')
+        product['description'] = description.strip() if isinstance(description, str) and description.strip() else None
+        encoded = info.get('image_base64')
+        if isinstance(encoded, str):
+            try:
+                image = base64.b64decode(encoded, validate=True)
+            except (ValueError, TypeError):
+                image = b''
+            if image.startswith(b'\x89PNG\r\n\x1a\n'):
+                image_folder = folder / 'images'
+                image_folder.mkdir(parents=True, exist_ok=True)
+                image_path = image_folder / f'ps5-{file_id}.png'
+                with image_path.open('xb') as output:
+                    output.write(image)
+                product['image_dir'] = str(image_path)
+    payload = {'url': url, 'has_ps5_info': selected is not None, 'ps5_info': product}
+    destination = folder / f'scrape-{file_id}.json'
+    with destination.open('x', encoding='utf-8') as output:
+        json.dump(payload, output, ensure_ascii=False, indent=2)
+    return destination
 
 
 def validate_endpoint(endpoint):
@@ -87,13 +131,7 @@ async def run(args):
         folder.mkdir(parents=True, exist_ok=True)
         destination = folder / f'research-{file_id}.json'
         destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
-        scrape_folder = Path(args.scrape_output_dir)
-        scrape_folder.mkdir(parents=True, exist_ok=True)
-        scrape_destination = scrape_folder / f'scrape-agent-{file_id}.json'
-        scrape_payload = {'run_id': run_id, 'website': args.url, 'product': args.product,
-                          'observations': snapshots}
-        with scrape_destination.open('x', encoding='utf-8') as output:
-            json.dump(scrape_payload, output, ensure_ascii=False, indent=2)
+        scrape_destination = save_simple_scrape(snapshots, args.scrape_output_dir, file_id, args.url)
     # Only fixed metadata, never prompts, page bodies, request headers or SDK errors.
     summary = {'service': 'retail-agent', 'run_id': run_id, 'status': result['status'],
                       'prompt_version': PROMPT_VERSION, 'result': str(destination),

@@ -2,6 +2,11 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# Keeps navigation below the API's 3.5 MB response envelope while allowing
+# rendered product images larger than the former 200 KB image-specific cap.
+MAX_NAVIGATION_BYTES = 2_800_000
+
+
 class OpenPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=8, max_length=4096)

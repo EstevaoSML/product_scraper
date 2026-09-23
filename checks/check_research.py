@@ -163,6 +163,26 @@ def check_snapshot_invalidated_after_search():
     assert 'follow_link' not in [n for n, _ in client.calls]
 
 
+def check_search_refinements_and_pagination_are_hidden_and_rejected():
+    observations = pages()
+    observations[1]['elements'].insert(0, {'element_id':'e9', 'action':'follow_link',
+        'href':WEBSITE+'search?page=2', 'accessible_name':'More results'})
+    choices = iter(decisions())
+    async def decide(messages):
+        decision = next(choices)
+        if decision.get('tool') == 'follow_link':
+            observation = json.loads(messages[-1]['content'])
+            assert 'e9' not in {element['element_id'] for element in observation['elements']}
+        return decision
+    client = SyntheticMCP(observations)
+    assert asyncio.run(research(client, decide, WEBSITE, PRODUCT))['status'] == 'complete'
+    bad = decisions()
+    bad[1]['arguments']['element_id'] = 'e9'
+    client = SyntheticMCP(observations)
+    assert asyncio.run(research(client, scripted(bad), WEBSITE, PRODUCT))['status'] == 'partial'
+    assert 'follow_link' not in [name for name, _ in client.calls]
+
+
 def check_invalid_limits():
     with pytest.raises(ValueError): asyncio.run(research(None, None, WEBSITE, PRODUCT, max_operations=11))
 

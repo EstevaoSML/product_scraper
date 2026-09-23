@@ -1,4 +1,5 @@
 """Isolated, line-oriented browser process. All JavaScript here is fixed application code."""
+import base64
 import json
 import os
 import re
@@ -14,8 +15,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from app.browser import create_driver
 from app.policy import URLPolicyError, configured_hosts, validate_url_structure
+from app.navigation import MAX_NAVIGATION_BYTES
 
-MAX_SNAPSHOT = 500_000
+MAX_SNAPSHOT = MAX_NAVIGATION_BYTES
 FORBIDDEN = re.compile(r"(?:cart|checkout|basket|payment|purchase|logout|login|sign[-_]?out|delete|remove|subscribe|carrinho|pagamento|comprar|excluir)", re.I)
 # Search eligibility is deliberately narrower than every editable input.
 SEARCH_CHECK = """
@@ -38,9 +40,22 @@ for (const e of document.querySelectorAll('input,a[href]')) {
     accessible_name:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('title')||'').trim().slice(0,300),
     placeholder:(e.placeholder||'').slice(0,200),href:tag==='a'?e.href.slice(0,4096):null});
 }
+const heading=Array.from(document.querySelectorAll('h1')).find(visible);
+const meta=(selector)=>document.querySelector(selector)?.content?.trim()||'';
+const productName=(heading?.innerText||meta('meta[property="og:title"]')||document.title).trim().slice(0,1000);
+const description=(meta('meta[name="description"]')||meta('meta[property="og:description"]')).slice(0,5000);
+const imageCandidates=Array.from(document.images).filter(e=>visible(e)&&e.naturalWidth>=120&&e.naturalHeight>=120)
+  .map(e=>({node:e,alt:(e.alt||'').trim().slice(0,1000),src:(e.currentSrc||e.src||'').slice(0,4096),
+    score:Math.min(e.getBoundingClientRect().width*e.getBoundingClientRect().height,1000000)+
+      ((e.alt||'').toLowerCase().split(/\\s+/).filter(w=>w.length>2&&productName.toLowerCase().includes(w)).length*100000)}))
+  .sort((a,b)=>b.score-a.score);
 return {title:document.title.slice(0,500),visible_text:(document.body?.innerText||'').slice(0,20000),
   text_truncated:(document.body?.innerText||'').length>20000, rows,
-  jsonld:Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0,10).map(e=>e.textContent.slice(0,32000))};
+  jsonld:Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0,10).map(e=>e.textContent.slice(0,32000)),
+  page_info:{product_name:productName,description,
+    is_product:meta('meta[property="og:type"]').toLowerCase()==='product'||!!document.querySelector('[itemtype*="schema.org/Product"]')||
+      new RegExp('/(?:p|product|produto)(?:/|$)','i').test(location.pathname)},
+  product_image:imageCandidates[0]||null};
 """
 
 
@@ -81,6 +96,19 @@ class BrowserSession:
     def snapshot(self):
         self.check_url(self.driver.current_url)
         raw = self.driver.execute_script(SNAPSHOT)
+        image = raw.pop('product_image', None)
+        page_info = raw.get('page_info') if isinstance(raw.get('page_info'), dict) else {}
+        if isinstance(image, dict):
+            node = image.pop('node', None)
+            page_info['image_alt'] = image.get('alt', '')
+            page_info['image_source'] = image.get('src', '')
+            try:
+                png = node.screenshot_as_png if node is not None else b''
+                if png:
+                    page_info['image_base64'] = base64.b64encode(png).decode('ascii')
+            except (WebDriverException, AttributeError):
+                page_info['image_unavailable'] = True
+        raw['page_info'] = page_info
         self.snapshot_id = uuid.uuid4().hex
         self.page_url = self.driver.current_url
         self.elements = {}
@@ -120,11 +148,20 @@ class BrowserSession:
                 collect(json.loads(script))
             except (ValueError, RecursionError):
                 pass
+        if products:
+            page_info['is_product'] = True
+            if not page_info.get('product_name') and isinstance(products[0].get('name'), str):
+                page_info['product_name'] = products[0]['name'][:1000]
+            if not page_info.get('description') and isinstance(products[0].get('description'), str):
+                page_info['description'] = products[0]['description'][:5000]
         text = raw['visible_text'].lower()
         status = 'blocked' if any(x in text for x in ('verify you are human', 'access denied', 'verifique que você é humano')) else 'ok'
         result = {**raw, 'snapshot_id': self.snapshot_id, 'url': self.page_url, 'elements': elements,
                   'products': products, 'status': status, 'untrusted_content': True,
                   'fetched_at': datetime.now(timezone.utc).isoformat(), 'pages_remaining': 5-self.followed}
+        if len(json.dumps(result).encode()) > MAX_SNAPSHOT:
+            result.get('page_info', {}).pop('image_base64', None)
+            result.setdefault('page_info', {})['image_truncated'] = True
         if len(json.dumps(result).encode()) > MAX_SNAPSHOT:
             result['products'] = []
             result['structured_data_truncated'] = True

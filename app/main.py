@@ -206,6 +206,7 @@ def scrape(payload: ScrapeRequest):
 
 
 def execute_navigation(action, payload):
+    from app.navigation import MAX_NAVIGATION_BYTES
     from urllib.request import build_opener, ProxyHandler, HTTPRedirectHandler
     class NoRedirect(HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
@@ -223,7 +224,7 @@ def execute_navigation(action, payload):
         headers={"Content-Type": "application/json", "X-API-Key": BROWSER_API_KEY or api_key}, method="POST")
     try:
         with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=70) as response:
-            raw = response.read(600_001)
+            raw = response.read(MAX_NAVIGATION_BYTES + 1)
     except HTTPError as exc:
         statuses = {400: "Destination rejected", 404: "Session unavailable",
                     409: "Navigation rejected; inspect page or open a new session",
@@ -247,7 +248,7 @@ def execute_navigation(action, payload):
         raise HTTPException(502, "Browser worker unavailable") from None
     try:
         data = json.loads(raw)
-        if len(raw) > 600_000 or not isinstance(data, dict) or "session_id" not in data:
+        if len(raw) > MAX_NAVIGATION_BYTES or not isinstance(data, dict) or "session_id" not in data:
             raise ValueError()
         if action != "close_session":
             validate_url(data["url"], ALLOWED_HOSTS)

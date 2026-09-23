@@ -2,7 +2,7 @@
 
 This guide explains how to run the scraper on your own machine, send a website URL, and save the response. Examples use Windows PowerShell.
 
-The scraper returns rendered HTML inside JSON. Product-field extraction and LLM processing are not implemented yet.
+The REST and `scrape_html` interfaces return rendered HTML inside JSON. The optional retail agent extracts grounded product data and writes its compact PS5 result under `outputs/scrapes`; see `docs/RETAIL-AGENT.md`.
 
 ## 1. The API address and the website URL are different
 
