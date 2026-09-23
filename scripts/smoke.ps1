@@ -14,7 +14,7 @@ if (-not $ready) { throw 'Browser did not become ready. Check docker compose log
 $body = @{url=$Url; wait_seconds=5; timeout_seconds=30} | ConvertTo-Json
 $result = Invoke-RestMethod "$BaseUrl/scrape" -Method Post -Headers @{'X-API-Key'=$key} -ContentType 'application/json' -Body $body -TimeoutSec 180
 if (-not $result.html -or -not $result.browser_version) { throw 'Response lacks HTML or browser version' }
-$outputDir = Join-Path $repo 'outputs'
+$outputDir = Join-Path $repo 'outputs\scrapes'
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $outputFile = Join-Path $outputDir "scrape_${executionTimestamp}_${executionId}.json"
 # CreateNew guarantees an existing result is never overwritten, even on collision.

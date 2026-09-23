@@ -48,7 +48,8 @@ def setup_job(monkeypatch):
 def arguments(tmp_path,**kwargs):
     args = dict(url=WEBSITE,product=PRODUCT,max_cost_usd='0.05',key_file=None,
                 endpoint='http://127.0.0.1:8000/mcp',storage_account=None,
-                identity_client_id=None,output_dir=str(tmp_path))
+                identity_client_id=None,output_dir=str(tmp_path),
+                scrape_output_dir=str(tmp_path/'scrapes'))
     return SimpleNamespace(**(args|kwargs))
 
 
@@ -66,6 +67,13 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     diagnostics = next(tmp_path.glob('diagnostics-*.json')).read_text()
     assert json.loads(diagnostics) == json.loads(output)
     assert CANARY not in diagnostics and 'SYNTHETIC_MCP_CREDENTIAL' not in diagnostics
+    scrape_path = next((tmp_path/'scrapes').glob('scrape-agent-*.json'))
+    scrape = json.loads(scrape_path.read_text())
+    assert scrape['run_id'] == json.loads(output)['run_id']
+    assert scrape['website'] == WEBSITE and scrape['product'] == PRODUCT
+    assert len(scrape['observations']) == 3
+    assert all('session_id' not in page and 'request_id' not in page for page in scrape['observations'])
+    assert json.loads(output)['scrape_output'] == str(scrape_path)
 
 
 def check_local_key_file(monkeypatch,tmp_path):
@@ -82,12 +90,14 @@ def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,c
         args = research_job.parser().parse_args([
             '--url',WEBSITE,'--product',PRODUCT,'--max-cost-usd','0.05'])
         assert args.output_dir == 'outputs/agent'
+        assert args.scrape_output_dir == 'outputs/scrapes'
         # Isolate local CLI behavior from inherited Azure configuration.
         args.storage_account = None
         asyncio.run(research_job.run(args))
     folder = tmp_path/'outputs'/'agent'
     assert len(list(folder.glob('research-*.json'))) == 2
     assert len(list(folder.glob('diagnostics-*.json'))) == 2
+    assert len(list((tmp_path/'outputs'/'scrapes').glob('scrape-agent-*.json'))) == 2
     assert not list((tmp_path/'outputs').glob('*.json'))
     runs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert runs[0]['run_id'] != runs[1]['run_id']

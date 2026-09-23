@@ -26,7 +26,7 @@ python -m pip install -r requirements-dev.txt
 python scripts/mcp_client.py 'https://www.kabum.com.br/produto/989702/console-sony-playstation-5-ssd-825gb-controle-sem-fio-dualsense-2-jogos-digitais-edicao-digital'
 ```
 
-O cliente lê `secrets/api_key.txt`, descobre a ferramenta, chama `scrape_html` e salva um JSON diferente em `outputs/scrape_mcp_<timestamp-UTC>_<id>.json`. Não imprime a chave. Não sobrescreve resultados anteriores. Os erros da ferramenta aparecem com código e request ID e são registrados pelo servidor. Uma falha local de conexão do cliente Python não gera um arquivo de log no servidor.
+O cliente lê `secrets/api_key.txt`, descobre a ferramenta, chama `scrape_html` e salva um JSON diferente em `outputs/scrapes/scrape_mcp_<timestamp-UTC>_<id>.json`. Não imprime a chave. Não sobrescreve resultados anteriores. Os erros da ferramenta aparecem com código e request ID e são registrados pelo servidor. Uma falha local de conexão do cliente Python não gera um arquivo de log no servidor.
 
 Para outra instalação, use `--endpoint https://SEU-SERVIDOR/mcp --key-file CAMINHO_DA_CHAVE`. Não envie sua chave local para servidores de terceiros.
 

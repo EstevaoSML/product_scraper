@@ -84,9 +84,9 @@ From the repository folder:
 .\scripts\smoke.ps1 -Url 'https://example.com'
 ~~~
 
-The script reads the API key, waits for browser readiness, sends the request, and saves each successful response to a new `outputs/scrape_<UTC-timestamp>_<unique-id>.json` file. The timestamp records the execution start in UTC, including milliseconds; the unique ID distinguishes concurrent runs. Existing results are never overwritten. The script prints the full saved path. Failures continue to use the error logs described below.
+The script reads the API key, waits for browser readiness, sends the request, and saves each successful response to a new `outputs/scrapes/scrape_<UTC-timestamp>_<unique-id>.json` file. The timestamp records the execution start in UTC, including milliseconds; the unique ID distinguishes concurrent runs. Existing results are never overwritten. The script prints the full saved path. Failures continue to use the error logs described below.
 
-Each run overwrites that output file. The manual example below lets you choose filenames.
+Each run creates a new output file. The manual example below lets you choose filenames.
 
 To try the original product page:
 
@@ -119,9 +119,9 @@ Change the url value to select a different website. Keep the API address pointin
 Save the complete JSON and the HTML separately:
 
 ~~~powershell
-New-Item -ItemType Directory -Force -Path '.\outputs' | Out-Null
-$result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath '.\outputs\example-response.json' -Encoding utf8
-$result.html | Set-Content -LiteralPath '.\outputs\example-page.html' -Encoding utf8
+New-Item -ItemType Directory -Force -Path '.\outputs\scrapes' | Out-Null
+$result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath '.\outputs\scrapes\example-response.json' -Encoding utf8
+$result.html | Set-Content -LiteralPath '.\outputs\scrapes\example-page.html' -Encoding utf8
 ~~~
 
 The API returns data to the caller; it does not automatically save it on your host. These commands create the files.

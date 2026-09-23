@@ -40,6 +40,7 @@ async def run(args):
     guard = SecretGuard((mcp_key, model_key))
     guard.check({'url': args.url, 'product': args.product, 'endpoint': args.endpoint})
     stats = {}
+    snapshots = []
 
     async def work():
         import httpx
@@ -51,7 +52,8 @@ async def run(args):
             async with httpx2.AsyncClient(headers={'X-API-Key': mcp_key}, timeout=60,
                                            follow_redirects=False, trust_env=False) as mcp_http:
                 async with Client(streamable_http_client(args.endpoint, http_client=mcp_http)) as client:
-                    result = await research(client, decide, args.url, args.product, metrics=stats)
+                    result = await research(client, decide, args.url, args.product, metrics=stats,
+                                            on_snapshot=snapshots.append)
                     guard.check(result)
                     return result
 
@@ -85,11 +87,19 @@ async def run(args):
         folder.mkdir(parents=True, exist_ok=True)
         destination = folder / f'research-{file_id}.json'
         destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+        scrape_folder = Path(args.scrape_output_dir)
+        scrape_folder.mkdir(parents=True, exist_ok=True)
+        scrape_destination = scrape_folder / f'scrape-agent-{file_id}.json'
+        scrape_payload = {'run_id': run_id, 'website': args.url, 'product': args.product,
+                          'observations': snapshots}
+        with scrape_destination.open('x', encoding='utf-8') as output:
+            json.dump(scrape_payload, output, ensure_ascii=False, indent=2)
     # Only fixed metadata, never prompts, page bodies, request headers or SDK errors.
     summary = {'service': 'retail-agent', 'run_id': run_id, 'status': result['status'],
                       'prompt_version': PROMPT_VERSION, 'result': str(destination),
                       'budgets': budget.summary(), 'navigation': stats}
     if not args.storage_account:
+        summary['scrape_output'] = str(scrape_destination)
         (folder / f'diagnostics-{file_id}.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     print(json.dumps(summary))
     return result
@@ -106,6 +116,8 @@ def parser():
     cli.add_argument('--identity-client-id', default=os.getenv('AZURE_CLIENT_ID'))
     cli.add_argument('--output-dir', default='outputs/agent',
                      help='Local agent reports and diagnostics directory (default: outputs/agent)')
+    cli.add_argument('--scrape-output-dir', default='outputs/scrapes',
+                     help='Local MCP navigation observations directory (default: outputs/scrapes)')
     return cli
 
 

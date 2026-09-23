@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument("url")
     parser.add_argument("--endpoint", default="http://127.0.0.1:8000/mcp")
     parser.add_argument("--key-file", type=Path, default=root / "secrets/api_key.txt")
-    parser.add_argument("--output-dir", type=Path, default=root / "outputs")
+    parser.add_argument("--output-dir", type=Path, default=root / "outputs" / "scrapes")
     args = parser.parse_args()
     try:
         raise SystemExit(asyncio.run(run(args)))

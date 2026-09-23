@@ -53,13 +53,13 @@ def check_powershell_error_storage(structured):
         command = [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runtime / "scripts/smoke.ps1"),
                    "-BaseUrl", f"http://127.0.0.1:{server.server_port}", "-Url", "https://example.com/?token=secret-query"]
         if structured == "success":
-            (runtime / "outputs").mkdir()
-            previous = runtime / "outputs/scrape.json"
+            (runtime / "outputs/scrapes").mkdir(parents=True)
+            previous = runtime / "outputs/scrapes/scrape.json"
             previous.write_text('{"previous":true}')
             for _ in range(2):
                 result = subprocess.run(command, capture_output=True, timeout=30)
                 assert result.returncode == 0, result.stderr
-            files = list((runtime / "outputs").glob("scrape_*.json"))
+            files = list((runtime / "outputs/scrapes").glob("scrape_*.json"))
             assert len(files) == 2
             for path in files:
                 assert re.fullmatch(r"scrape_\d{8}_\d{6}_\d{3}Z_[a-f0-9]{32}\.json", path.name)

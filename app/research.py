@@ -72,7 +72,7 @@ def tool_error(result):
 async def research(client, decide, website, product, *, max_decisions=8,
                    timeout_seconds=180, max_operations=10, max_links=5,
                    max_retries=2, max_invalid=2, metrics=None,
-                   clock=time.monotonic, sleep=asyncio.sleep):
+                   on_snapshot=None, clock=time.monotonic, sleep=asyncio.sleep):
     """Reuse a connected official MCP client and trusted async decision adapter.
 
     Model token/cost reservations live in the adapter. Every dispatch is counted
@@ -145,6 +145,8 @@ async def research(client, decide, website, product, *, max_decisions=8,
         safe_retail_url(data['url'], website)
         snapshots[data['snapshot_id']] = data
         observation = {k: v for k, v in data.items() if k not in ('session_id', 'request_id')}
+        if on_snapshot is not None:
+            on_snapshot(copy.deepcopy(observation))
         messages.append({'role': 'tool', 'content': json.dumps(observation, ensure_ascii=False)})
         return data
 
