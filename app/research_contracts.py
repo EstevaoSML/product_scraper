@@ -147,13 +147,14 @@ def validate_report(candidate, snapshots, requested_product=None):
     present = {k: v for k, v in facts.items() if v is not None}
     if report.status in ('not_found', 'blocked') and present:
         raise ValueError('Negative result cannot contain product facts')
-    if report.status == 'complete' and len(present) != len(REQUIRED_FIELDS):
-        raise ValueError('Complete requires all fields')
     if not present:
         return empty_result(report.reason, report.status)
     if not facts['name'] or not facts['variant']:
         raise ValueError('Product and variant identity are required before reporting facts')
-    ids = {v.snapshot_id for v in present.values()}
+    # The model chooses the product/offer. Only identity facts determine the
+    # authoritative snapshot; financial scalars are projected from that Offer
+    # below so transcription or an inferred seller cannot corrupt the result.
+    ids = {facts[key].snapshot_id for key in ('name', 'variant')}
     if len(ids) != 1:
         raise ValueError('Do not combine snapshots or offers')
     page = snapshots.get(next(iter(ids)))
@@ -190,28 +191,37 @@ def validate_report(candidate, snapshots, requested_product=None):
             raise ValueError('Identity must match the selected Product name')
         if requested_product and not tokens(requested_product) <= tokens(name):
             raise ValueError('Structured product does not match request')
-    field_keys = {'price': 'price', 'currency': 'priceCurrency', 'seller': 'seller', 'availability': 'availability'}
     values, evidence = dict.fromkeys(REQUIRED_FIELDS), {}
-    for key, fact in present.items():
+    for key in ('name', 'variant'):
+        fact = facts[key]
         if fact.quote not in observed or fact.value.casefold() not in fact.quote.casefold():
             raise ValueError('Unobserved quote or value')
-        if key in field_keys:
-            if offer is None:
-                raise ValueError('Offer association cannot be established')
-            actual = offer.get(field_keys[key])
-            if key == 'seller' and isinstance(actual, dict):
-                actual = actual.get('name')
-            if actual is None or fact.value != str(actual):
-                raise ValueError('Fact belongs to another offer or is normalized without evidence')
-        elif selected is None and fact.quote not in page['visible_text']:
+        if selected is None and fact.quote not in page['visible_text']:
             raise ValueError('Unstructured identity needs visible evidence')
         values[key] = fact.value
         evidence[key] = Evidence(quote=fact.quote, source_url=page['url'], observed_at=page['fetched_at'])
+    if offer is None and any(facts[key] is not None for key in ('price', 'currency', 'seller', 'availability')):
+        raise ValueError('Offer association cannot be established')
+    if offer is not None:
+        field_keys = {'price': 'price', 'currency': 'priceCurrency',
+                      'seller': 'seller', 'availability': 'availability'}
+        for key, source_key in field_keys.items():
+            actual = offer.get(source_key)
+            if key == 'seller' and isinstance(actual, dict):
+                actual = actual.get('name')
+            if isinstance(actual, bool) or not isinstance(actual, (str, int, float)):
+                continue
+            value = str(actual)
+            if not 1 <= len(value) <= 1000 or value not in observed:
+                continue
+            values[key] = value
+            evidence[key] = Evidence(quote=value, source_url=page['url'], observed_at=page['fetched_at'])
     if selected is None and requested_product:
         identity_quote_words = tokens(facts['name'].quote) | tokens(facts['variant'].quote)
         if identity_quote_words <= tokens(requested_product):
             # An echoed query is visible text, but does not establish a listing.
             # Return a safe partial directly rather than spend retries restating it.
             return empty_result('Only the search query was evidenced; no specific product identity or offer was established.')
-    return Result(status=report.status, product=Product(**values), evidence=evidence,
-                  reason=report.reason).model_dump()
+    status = 'complete' if all(value is not None for value in values.values()) else 'partial'
+    return Result(status=status, product=Product(**values), evidence=evidence,
+                  reason=None if status == 'complete' else report.reason).model_dump()

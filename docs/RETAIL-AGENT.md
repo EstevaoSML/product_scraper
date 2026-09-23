@@ -114,6 +114,9 @@ literal string values or null. Prices are not silently converted or normalized.
 Retail pages may display list, installment and Pix/cash prices together. The
 selected direct `Offer` remains canonical for financial fields; those display
 alternatives alone do not make the result contradictory.
+The agent selects the Product and direct Offer. The application then copies each
+available financial scalar from that Offer. A missing seller therefore leaves
+only `seller` null while retaining price, currency and availability when present.
 Every non-null value has an exact quote, source_url and observed_at.
 
 Internal reports also select zero-based `product_index` and `offer_index` from

@@ -24,26 +24,34 @@ def check_corpus_through_real_entry_point(case):
     assert CANARY not in json.dumps(result)
 
 
-@pytest.mark.parametrize('mutation', ['value', 'quote', 'snapshot', 'missing', 'extra', 'cross_snapshot', 'seller', 'variant', 'aggregate'])
+@pytest.mark.parametrize('mutation', ['quote', 'missing', 'extra', 'variant', 'aggregate'])
 def check_report_rejects_unsupported_or_mixed_facts(mutation):
     observation, candidate = pages()[2], report()
     snapshots = {observation['snapshot_id']: observation}
-    if mutation == 'value': candidate['fields']['price']['value'] = '1.00'
     if mutation == 'quote': candidate['fields']['name']['quote'] = 'fabricated'
-    if mutation == 'snapshot': candidate['fields']['price']['snapshot_id'] = 'f' * 32
     if mutation == 'missing': candidate['fields']['name'] = None
     if mutation == 'extra': candidate['fields']['token'] = None
-    if mutation == 'cross_snapshot':
-        snapshots['f' * 32] = {**observation, 'url': WEBSITE + 'other'}
-        candidate['fields']['price']['snapshot_id'] = 'f' * 32
-        candidate['status'] = 'partial'
-    if mutation == 'seller':
-        observation['visible_text'] += ' Loja Verde'
-        candidate['fields']['seller'].update(value='Loja Verde', quote='Loja Verde')
     if mutation == 'variant': candidate['fields']['variant'].update(value='Disc', quote='Disc')
     if mutation == 'aggregate': observation['products'][0]['offers']['@type'] = 'AggregateOffer'
     with pytest.raises(ValueError):
         validate_report(candidate, snapshots, PRODUCT)
+
+
+def check_financial_fields_are_projected_from_offer_and_missing_seller_stays_null():
+    observation = pages()[2]
+    observation['products'][0]['offers'].pop('seller')
+    candidate = report(observation)
+    candidate['status'] = 'partial'
+    candidate['fields']['price'].update(value='invented', snapshot_id='f' * 32, quote='invented')
+    candidate['fields']['seller'] = {
+        'value': 'KaBuM!', 'snapshot_id': 'f' * 32, 'quote': 'KaBuM!'}
+    result = validate_report(candidate, {observation['snapshot_id']: observation}, PRODUCT)
+    assert result['status'] == 'partial'
+    assert result['product']['price'] == observation['products'][0]['offers']['price']
+    assert result['product']['currency'] == 'BRL'
+    assert result['product']['availability'] == 'https://schema.org/InStock'
+    assert result['product']['seller'] is None
+    assert set(result['evidence']) == {'name', 'variant', 'price', 'currency', 'availability'}
 
 
 def check_visible_pix_and_installment_prices_do_not_invalidate_direct_offer():
@@ -306,14 +314,15 @@ def check_rejection_feedback_never_echoes_exception_secrets():
         assert CANARY not in feedback
 
 
-def check_grounding_feedback_allows_a_corrected_report():
+def check_incorrect_model_price_is_replaced_without_an_extra_decision():
     bad = report()
     bad['fields']['price']['value'] = 'invented'
     client, stats = SyntheticMCP(), {}
-    result = asyncio.run(research(client, scripted(decisions(bad) + [envelope({'report': report()}, positive=True)]),
+    result = asyncio.run(research(client, scripted(decisions(bad)),
                                   WEBSITE, PRODUCT, metrics=stats))
     assert result['status'] == 'complete'
-    assert stats['rejections'][0]['code'] == 'ungrounded_evidence'
+    assert stats['decisions'] == 3 and stats['invalid'] == 0
+    assert result['product']['price'] == pages()[2]['products'][0]['offers']['price']
     assert stats['cleanup'] == 'closed'
 
 
