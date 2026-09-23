@@ -176,5 +176,11 @@ def validate_report(candidate, snapshots, requested_product=None):
             raise ValueError('Unstructured identity needs visible evidence')
         values[key] = fact.value
         evidence[key] = Evidence(quote=fact.quote, source_url=page['url'], observed_at=page['fetched_at'])
+    if selected is None and requested_product:
+        identity_quote_words = tokens(facts['name'].quote) | tokens(facts['variant'].quote)
+        if identity_quote_words <= tokens(requested_product):
+            # An echoed query is visible text, but does not establish a listing.
+            # Return a safe partial directly rather than spend retries restating it.
+            return empty_result('Only the search query was evidenced; no specific product identity or offer was established.')
     return Result(status=report.status, product=Product(**values), evidence=evidence,
                   reason=report.reason).model_dump()

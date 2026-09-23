@@ -167,6 +167,39 @@ def check_invalid_limits():
     with pytest.raises(ValueError): asyncio.run(research(None, None, WEBSITE, PRODUCT, max_operations=11))
 
 
+@pytest.mark.parametrize('quote', [PRODUCT, PRODUCT.upper(), PRODUCT + '!!!'])
+def check_echoed_query_is_not_product_evidence(quote):
+    observation = pages()[2]
+    observation.update(products=[], visible_text=quote,
+                       url=WEBSITE+'s?q=Console+Nova+Digital+1TB&page=1')
+    candidate = report(observation, product_index=None, offer_index=None, status='partial')
+    for field in ('name', 'variant'):
+        candidate['fields'][field]['quote'] = quote
+    result = validate_report(candidate, {observation['snapshot_id']:observation}, PRODUCT)
+    assert result['status'] == 'partial' and not any(result['product'].values())
+    assert result['evidence'] == {} and 'search query' in result['reason']
+
+
+def check_pagination_query_echo_returns_empty_partial_and_closes():
+    observations = pages()
+    observations[2].update(products=[], visible_text=PRODUCT, url=WEBSITE+'s?page=1')
+    candidate = report(observations[2], product_index=None, offer_index=None, status='partial')
+    client, stats = SyntheticMCP(observations), {}
+    result = asyncio.run(research(client, scripted(decisions(candidate)), WEBSITE, PRODUCT, metrics=stats))
+    assert result['status'] == 'partial' and result['evidence'] == {}
+    assert all(value is None for value in result['product'].values())
+    assert stats['invalid'] == 0 and stats['cleanup'] == 'closed'
+
+
+def check_structured_product_with_exact_query_title_still_valid():
+    observation = pages()[2]
+    candidate = report(observation)
+    for field in ('name', 'variant'):
+        candidate['fields'][field]['quote'] = PRODUCT
+    result = validate_report(candidate, {observation['snapshot_id']:observation}, PRODUCT)
+    assert result['status'] == 'complete'
+
+
 def check_identity_rejection_has_safe_actionable_feedback_and_cleanup():
     candidate = report()
     client, stats = SyntheticMCP(), {}

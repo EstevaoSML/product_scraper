@@ -126,6 +126,13 @@ recall to avoid associating unrelated cards on a shared URL. JSON-LD can still b
 stale or dishonest. Source association is not a guarantee of retailer truth;
 semantic variant/accessory matching and contradictions need model evaluation.
 
+When no structured Product is selected and the identity quotes contain only words
+from the query, the validator clears all facts and evidence and returns partial.
+Echoed search terms do not establish a product listing. This conservative check
+can also reject a genuine unstructured title identical to the query; additional
+product-specific evidence is required. A structured Product with that same title
+continues through the normal identity and offer checks.
+
 ## Tests and evaluations
 
 ### Diagnosing partial runs
