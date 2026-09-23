@@ -55,8 +55,8 @@ def failure_details(error, stage):
 
 # Match only application-owned literal messages, never print exception text.
 DECISION_REJECTIONS = {
-    'Requested product/variant not supported': ('requested_identity_mismatch', 'Every requested word must be supported by the literal product name and variant. Do not translate or insert query words; return partial with null fields if unsupported.'),
-    'Structured product does not match request': ('requested_identity_mismatch', 'The selected Product name must support every requested word. Otherwise return partial with null fields; do not invent a matching identity.'),
+    'Requested product/variant not supported': ('requested_identity_mismatch', 'Every distinguishing requested term must be supported by the product name and variant. PS5/PlayStation 5 and Digital Edition/Edição Digital are normalized. Do not invent other query terms; return partial with null fields if unsupported.'),
+    'Structured product does not match request': ('requested_identity_mismatch', 'The selected Product name must support every distinguishing requested term after documented identity normalization. Otherwise return partial with null fields; do not invent a matching identity.'),
     'Structured product name is not visible on the page': ('product_name_not_visible', 'Choose a Product whose name appears in visible text, or return partial with null fields.'),
     'Identity must match the selected Product name': ('product_identity_mismatch', 'Name and variant must be literal parts of the selected Product name.'),
     'Unobserved quote or value': ('ungrounded_evidence', 'Use short exact quotes from the original observation and literal values. Do not quote reconstructed filtered objects.'),

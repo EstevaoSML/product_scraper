@@ -1,6 +1,7 @@
 """Strict provider-neutral decisions and public retail reports."""
 import json
 import re
+import unicodedata
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -75,11 +76,10 @@ class PageAssessment(Strict):
     has_ps5_info: bool
     product_name: str | None = Field(min_length=1, max_length=1000)
     description: str | None = Field(min_length=1, max_length=5000)
-    image_id: str | None = Field(pattern=r'^i[0-9]{1,2}$')
 
     @model_validator(mode='after')
     def consistent(self):
-        values = (self.product_name, self.description, self.image_id)
+        values = (self.product_name, self.description)
         if not self.has_ps5_info and any(value is not None for value in values):
             raise ValueError('A negative page assessment must contain null product fields')
         if self.has_ps5_info and (self.product_name is None or self.description is None):
@@ -120,7 +120,19 @@ def empty_result(reason, status='partial'):
 
 
 def tokens(value):
-    return set(re.findall(r'\w+', value.casefold()))
+    normalized = ''.join(character for character in
+                         unicodedata.normalize('NFKD', value.casefold())
+                         if not unicodedata.combining(character))
+    words = set(re.findall(r'\w+', normalized))
+    words = {'edition' if word == 'edicao' else word for word in words}
+    if 'ps5' in words or ('playstation' in words and '5' in words):
+        words.difference_update(('ps5', 'playstation', '5'))
+        words.add('playstation5')
+    # "Digital Edition" and Portuguese "Edição Digital" describe the same
+    # discless variant; "digital" carries the distinguishing information.
+    if 'digital' in words:
+        words.discard('edition')
+    return words
 
 
 def validate_report(candidate, snapshots, requested_product=None):
@@ -171,7 +183,8 @@ def validate_report(candidate, snapshots, requested_product=None):
     if selected is not None:
         # Do not allow an accessory's description or another variant to establish identity.
         name = str(selected.get('name', ''))
-        if name.casefold() not in page['visible_text'].casefold():
+        if (name.casefold() not in page['visible_text'].casefold()
+                and not tokens(name) <= tokens(page['visible_text'])):
             raise ValueError('Structured product name is not visible on the page')
         if facts['name'].value.casefold() not in name.casefold() or facts['variant'].value.casefold() not in name.casefold():
             raise ValueError('Identity must match the selected Product name')

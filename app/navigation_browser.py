@@ -1,5 +1,4 @@
 """Isolated, line-oriented browser process. All JavaScript here is fixed application code."""
-import base64
 import json
 import os
 import re
@@ -54,17 +53,10 @@ const heading=Array.from(document.querySelectorAll('h1')).find(visible);
 const meta=(selector)=>document.querySelector(selector)?.content?.trim()||'';
 const productName=(heading?.innerText||meta('meta[property="og:title"]')||document.title).trim().slice(0,1000);
 const description=(meta('meta[name="description"]')||meta('meta[property="og:description"]')).slice(0,5000);
-const imageCandidates=Array.from(document.images).filter(e=>visible(e)&&e.naturalWidth>=120&&e.naturalHeight>=120)
-  .map(e=>({node:e,alt:(e.alt||'').trim().slice(0,1000),src:(e.currentSrc||e.src||'').slice(0,4096),
-    width:e.naturalWidth,height:e.naturalHeight,
-    score:Math.min(e.getBoundingClientRect().width*e.getBoundingClientRect().height,1000000)+
-      ((e.alt||'').toLowerCase().split(/\\s+/).filter(w=>w.length>2&&productName.toLowerCase().includes(w)).length*100000)}))
-  .sort((a,b)=>b.score-a.score);
 return {title:document.title.slice(0,500),visible_text:(document.body?.innerText||'').slice(0,20000),
   text_truncated:(document.body?.innerText||'').length>20000, rows,
   jsonld:Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0,10).map(e=>e.textContent.slice(0,32000)),
-  page_info:{product_name:productName,description},
-  images:imageCandidates.slice(0,20)};
+  page_info:{product_name:productName,description}};
 """
 
 
@@ -83,7 +75,6 @@ class BrowserSession:
         self.retailer = None
         self.snapshot_id = None
         self.elements = {}
-        self.images = {}
         self.page_url = None
         self.followed = 0
         self.allowed = configured_hosts(os.getenv('URL_POLICY', 'public'), os.getenv('ALLOWED_HOSTS', ''))
@@ -111,18 +102,6 @@ class BrowserSession:
         self.snapshot_id = uuid.uuid4().hex
         self.page_url = self.driver.current_url
         self.elements = {}
-        self.images = {}
-        images = []
-        for row in raw.pop('images', []):
-            if not isinstance(row, dict):
-                continue
-            node = row.pop('node', None)
-            if node is None:
-                continue
-            ref = 'i' + str(len(images))
-            row['image_id'] = ref
-            self.images[ref] = (node, dict(row))
-            images.append(row)
         elements = []
         for row in raw.pop('rows'):
             node = row.pop('node')
@@ -167,7 +146,7 @@ class BrowserSession:
         text = raw['visible_text'].lower()
         status = 'blocked' if any(x in text for x in ('verify you are human', 'access denied', 'verifique que você é humano')) else 'ok'
         result = {**raw, 'snapshot_id': self.snapshot_id, 'url': self.page_url, 'elements': elements,
-                  'images': images, 'products': products, 'status': status, 'untrusted_content': True,
+                  'products': products, 'status': status, 'untrusted_content': True,
                   'fetched_at': datetime.now(timezone.utc).isoformat(), 'pages_remaining': 5-self.followed}
         if len(json.dumps(result).encode()) > MAX_SNAPSHOT:
             result['products'] = []
@@ -175,23 +154,6 @@ class BrowserSession:
         return result
 
     def execute(self, action, arguments):
-        if action == 'capture_image':
-            if arguments['snapshot_id'] != self.snapshot_id or self.driver.current_url != self.page_url:
-                raise NavigationError('stale_snapshot')
-            if arguments['element_id'] not in self.images:
-                raise NavigationError('unknown_element')
-            node, observed = self.images[arguments['element_id']]
-            if not node.is_displayed():
-                raise NavigationError('stale_snapshot')
-            current = self.driver.execute_script('return arguments[0].currentSrc || arguments[0].src || ""', node)
-            if current != observed.get('src'):
-                raise NavigationError('stale_snapshot')
-            png = node.screenshot_as_png
-            if not png:
-                raise NavigationError('image_unavailable')
-            return {'snapshot_id': self.snapshot_id, 'url': self.page_url,
-                    'image_id': arguments['element_id'],
-                    'image_base64': base64.b64encode(png).decode('ascii')}
         if action == 'open_page':
             self.check_url(arguments['url'])
             self.retailer = host_group(arguments['url'])

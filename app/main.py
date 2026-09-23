@@ -237,7 +237,7 @@ def execute_navigation(action, payload):
             code = worker_error.get("code")
             message = worker_error.get("detail")
             allowed_codes = {"destination_rejected", "outside_retailer", "browser_timeout", "browser_error",
-                             "stale_snapshot", "unknown_element", "action_not_allowed", "page_limit", "image_unavailable"}
+                             "stale_snapshot", "unknown_element", "action_not_allowed", "page_limit"}
             if code in allowed_codes and isinstance(message, str) and len(message) <= 300:
                 detail = {"code": code, "message": message}
         except (ValueError, AttributeError, OSError):

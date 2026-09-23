@@ -183,18 +183,7 @@ def check_search_refinements_and_pagination_are_hidden_and_rejected():
     assert 'follow_link' not in [name for name, _ in client.calls]
 
 
-def check_agent_cannot_select_an_unobserved_product_image():
-    sequence = decisions()
-    sequence[2]['assessment']['image_id'] = 'i9'
-    client, assessments = SyntheticMCP(), []
-    result = asyncio.run(research(client, scripted(sequence[:2] + [sequence[2]] * 3),
-                                  WEBSITE, PRODUCT, on_assessment=assessments.append))
-    assert result['status'] == 'partial'
-    assert [entry['has_ps5_info'] for entry in assessments] == [False, False]
-    assert 'capture_image' not in [name for name, _ in client.calls]
-
-
-def check_agent_ps5_alias_assessment_is_saved_and_image_is_captured():
+def check_agent_ps5_alias_assessment_is_saved():
     requested = 'PS5 Digital Edition'
     product_name = 'Console PlayStation 5 Edição Digital'
     observations = pages()
@@ -212,7 +201,7 @@ def check_agent_ps5_alias_assessment_is_saved_and_image_is_captured():
                          on_assessment=assessments.append))
     assert assessments[-1]['has_ps5_info'] is True
     assert assessments[-1]['ps5_info']['product_name'] == product_name
-    assert client.calls[-2][0] == 'capture_image'
+    assert client.calls[-1][0] == 'close_session'
 
 
 def check_invalid_limits():
@@ -252,21 +241,36 @@ def check_structured_product_with_exact_query_title_still_valid():
     assert result['status'] == 'complete'
 
 
+def check_ps5_digital_edition_matches_portuguese_product_identity():
+    observation = pages()[2]
+    name = 'Console PS5 Sony Digital 825GB Bundle | Americanas'
+    observation['products'][0]['name'] = name
+    observation['visible_text'] = ('Console PlayStation 5 Edição Digital Sony Bundle 825GB - Americanas\n'
+                                   + observation['visible_text'])
+    candidate = report(observation)
+    evidence = json.dumps(observation['products'], ensure_ascii=False)
+    candidate['fields']['name'].update(value=name, quote=evidence)
+    candidate['fields']['variant'].update(value='Digital 825GB Bundle', quote=evidence)
+    result = validate_report(candidate, {observation['snapshot_id']: observation},
+                             'PS5 Digital Edition')
+    assert result['status'] == 'complete'
+
+
 def check_identity_rejection_has_safe_actionable_feedback_and_cleanup():
     candidate = report()
     client, stats = SyntheticMCP(), {}
-    # English query term is not present in the literal synthetic Product name.
+    # The requested Pro variant is not present in the synthetic Product name.
     sequence = decisions()[:2] + [envelope({'report': candidate})] * 3
-    sequence[0]['decision']['arguments']['query'] = PRODUCT + ' Edition'
+    sequence[0]['decision']['arguments']['query'] = PRODUCT + ' Pro'
     messages_seen = []
     iterator = iter(sequence)
     async def decide(messages):
         messages_seen.append(messages)
         return next(iterator)
-    result = asyncio.run(research(client, decide, WEBSITE, PRODUCT + ' Edition', metrics=stats))
+    result = asyncio.run(research(client, decide, WEBSITE, PRODUCT + ' Pro', metrics=stats))
     assert result['status'] == 'partial' and 'requested_identity_mismatch' in result['reason']
     assert [r['code'] for r in stats['rejections']] == ['requested_identity_mismatch'] * 3
-    assert 'Do not translate' in messages_seen[-1][-1]['content']
+    assert 'distinguishing requested term' in messages_seen[-1][-1]['content']
     assert stats['invalid'] == 3 and stats['cleanup'] == 'closed'
 
 
@@ -315,6 +319,7 @@ def check_output_schema_has_closed_objects():
     schema = DecisionEnvelope.model_json_schema()
     assert schema['additionalProperties'] is False
     assert all(v.get('additionalProperties') is False for v in schema['$defs'].values())
+    assert 'image' not in json.dumps(schema).casefold()
 
 
 def check_elapsed_deadline_prevents_dispatch_after_model_returns():
@@ -360,4 +365,4 @@ def check_refresh_after_stale_reference_then_resume():
         envelope({'report': {'status':'partial','fields':dict.fromkeys(REQUIRED_FIELDS),
                     'product_index':None,'offer_index':None,'reason':'Unavailable'}}, positive=True)]), WEBSITE, PRODUCT))
     assert result['status'] == 'partial'
-    assert [n for n, _ in client.calls] == ['open_page','search_site','follow_link','inspect_page','capture_image','close_session']
+    assert [n for n, _ in client.calls] == ['open_page','search_site','follow_link','inspect_page','close_session']

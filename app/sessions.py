@@ -134,7 +134,7 @@ class SessionManager:
                 raise HTTPException(502, 'Browser failed; session closed') from None
             if 'error' in result:
                 code = result['error']
-                recoverable = code in ('stale_snapshot', 'unknown_element', 'action_not_allowed', 'image_unavailable') and action != 'open_page'
+                recoverable = code in ('stale_snapshot', 'unknown_element', 'action_not_allowed') and action != 'open_page'
                 if not recoverable:
                     self.dispose()
                 statuses = {
@@ -142,7 +142,6 @@ class SessionManager:
                     'browser_timeout': 504, 'browser_error': 502,
                     'stale_snapshot': 409, 'unknown_element': 409,
                     'action_not_allowed': 409, 'page_limit': 409,
-                    'image_unavailable': 409,
                 }
                 messages = {
                     'destination_rejected': 'Destination or redirect was rejected by the public URL policy; session closed',
@@ -153,7 +152,6 @@ class SessionManager:
                     'unknown_element': 'Element was not present in the current snapshot; inspect the page again',
                     'action_not_allowed': 'The requested page action is not allowed',
                     'page_limit': 'Session page limit reached; session closed',
-                    'image_unavailable': 'The selected image could not be captured; inspect the page again',
                 }
                 raise HTTPException(statuses.get(code, 502),
                                     {'code': code, 'message': messages.get(code, 'Navigation failed; session closed')})

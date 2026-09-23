@@ -1,6 +1,5 @@
 """Synthetic MCP fixtures shared by deterministic and optional live-model evals."""
 import copy
-import base64
 import json
 from types import SimpleNamespace
 
@@ -30,8 +29,7 @@ def pages():
             page(2, text=PRODUCT, path='search', elements=[{'element_id': 'e1', 'action': 'follow_link',
                                                          'href': WEBSITE + 'console', 'accessible_name': PRODUCT}]),
             page(3, text=PRODUCT + '\n2499.90 BRL Loja Azul https://schema.org/InStock',
-                 products=[product()], path='console') | {'images': [{'image_id': 'i0',
-                    'alt': PRODUCT, 'src': WEBSITE + 'product.png', 'width': 800, 'height': 800}]}]
+                 products=[product()], path='console')]
 
 
 def report(observation=None, *, product_index=0, offer_index=0, status='complete'):
@@ -50,9 +48,9 @@ def report(observation=None, *, product_index=0, offer_index=0, status='complete
 
 
 def decisions(final=None):
-    negative = {'has_ps5_info': False, 'product_name': None, 'description': None, 'image_id': None}
+    negative = {'has_ps5_info': False, 'product_name': None, 'description': None}
     positive = {'has_ps5_info': True, 'product_name': PRODUCT,
-                'description': 'Console digital com armazenamento de 1TB.', 'image_id': 'i0'}
+                'description': 'Console digital com armazenamento de 1TB.'}
     final_assessment = (negative if final and final.get('status') in ('not_found', 'blocked') else positive)
     return [{'assessment': negative, 'decision': {'tool': 'search_site', 'arguments': {
                 'snapshot_id': f'{1:032x}', 'element_id': 'e0', 'query': PRODUCT}}},
@@ -63,9 +61,9 @@ def decisions(final=None):
 
 def envelope(decision, *, positive=False):
     assessment = ({'has_ps5_info': True, 'product_name': PRODUCT,
-                   'description': 'Console digital com armazenamento de 1TB.', 'image_id': 'i0'}
+                   'description': 'Console digital com armazenamento de 1TB.'}
                   if positive else
-                  {'has_ps5_info': False, 'product_name': None, 'description': None, 'image_id': None})
+                  {'has_ps5_info': False, 'product_name': None, 'description': None})
     return {'assessment': assessment, 'decision': decision}
 
 
@@ -79,12 +77,6 @@ class SyntheticMCP:
         self.calls.append((name, copy.deepcopy(arguments)))
         if name == 'close_session':
             return SimpleNamespace(is_error=False, structured_content={'closed': True})
-        if name == 'capture_image':
-            return SimpleNamespace(is_error=False, structured_content={
-                'session_id': self.pages[self.index]['session_id'],
-                'snapshot_id': arguments['snapshot_id'], 'url': self.pages[self.index]['url'],
-                'image_id': arguments['element_id'],
-                'image_base64': base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode()})
         if name not in ('open_page', 'search_site', 'follow_link', 'inspect_page'):
             raise AssertionError('Unauthorized tool reached MCP')
         if name != 'open_page':

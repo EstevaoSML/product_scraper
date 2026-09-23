@@ -19,8 +19,8 @@ KEY = 'navigation-key-' * 4
 
 
 class Node:
-    def __init__(self, href=None, screenshot=b''):
-        self.href, self.typed, self.screenshot_as_png = href, [], screenshot
+    def __init__(self, href=None):
+        self.href, self.typed = href, []
     def is_displayed(self): return True
     def is_enabled(self): return True
     def clear(self): self.typed.clear()
@@ -32,7 +32,6 @@ class Driver:
     def __init__(self):
         self.current_url = 'https://shop.example/'
         self.field, self.link = Node(), Node('https://shop.example/ps5')
-        self.image = Node('https://cdn.example/ps5.png', screenshot=b'\x89PNG\r\n\x1a\nfixture')
         self.form_url = self.current_url
         self.text = 'Sony PS5 Digital Edition BRL 3000 in stock'
         self.scripts = [json.dumps({'@graph': [{'@type': 'Product', 'name': 'PS5'}]})]
@@ -46,16 +45,13 @@ class Driver:
             return True
         if script == 'return document.readyState': return 'complete'
         if script.startswith('return arguments[0].form'): return self.form_url
-        if script.startswith('return arguments[0].currentSrc'): return args[0].href
         assert script == browser.SNAPSHOT
         return {'title': 'Fixture', 'visible_text': self.text, 'text_truncated': False,
                 'jsonld': self.scripts[:], 'rows': [
                     {'node': self.field, 'tag': 'input', 'href': None},
                     {'node': self.link, 'tag': 'a', 'href': self.link.href}],
                 'page_info': {'product_name': 'Sony PS5 Digital Edition',
-                              'description': 'Console digital', 'is_product': True},
-                'images': [{'node': self.image, 'alt': 'Sony PS5',
-                            'src': 'https://cdn.example/ps5.png', 'width': 800, 'height': 800}]}
+                              'description': 'Console digital'}}
 
 
 @pytest.fixture
@@ -120,7 +116,6 @@ def check_search_navigation_snapshots_and_evidence(page):
     assert result['untrusted_content'] is True
     result = page.execute('follow_link', action_args(page, 'e1'))
     assert result['url'].endswith('/ps5') and result['pages_remaining'] == 4
-    assert result['images'][0]['image_id'] == 'i0'
     assert page.execute('inspect_page', {})['visible_text'].startswith('Sony')
 
 
@@ -169,26 +164,6 @@ def check_malformed_structured_data_and_blocked_content(page):
 def check_snapshot_structured_data_limit(page, monkeypatch):
     monkeypatch.setattr(browser, 'MAX_SNAPSHOT', 10)
     assert page.snapshot()['structured_data_truncated']
-
-
-def check_product_image_larger_than_former_limit_is_retained(page):
-    import base64
-    png = b'\x89PNG\r\n\x1a\n' + b'x' * 250_000
-    page.driver.image.screenshot_as_png = png
-    snapshot = page.snapshot()
-    result = page.execute('capture_image', {'snapshot_id': snapshot['snapshot_id'], 'element_id': 'i0'})
-    assert base64.b64decode(result['image_base64']) == png
-
-
-def check_image_capture_rejects_stale_or_retargeted_reference(page):
-    snapshot = page.snapshot()
-    page.driver.image.href = 'https://cdn.example/changed.png'
-    with pytest.raises(browser.NavigationError) as stale:
-        page.execute('capture_image', {'snapshot_id': snapshot['snapshot_id'], 'element_id': 'i0'})
-    assert stale.value.code == 'stale_snapshot'
-    with pytest.raises(browser.NavigationError) as unknown:
-        page.execute('capture_image', {'snapshot_id': snapshot['snapshot_id'], 'element_id': 'i9'})
-    assert unknown.value.code == 'unknown_element'
 
 
 class Process:
@@ -419,22 +394,16 @@ def check_mcp_navigation_discovery_and_dispatch(monkeypatch):
     monkeypatch.delenv('API_KEY_FILE', raising=False)
     monkeypatch.setenv('API_KEY', MCP_KEY)
     def navigate_result(action, payload):
-        data = ({'session_id': 's'*43, 'snapshot_id': 'a'*32,
-                 'url': 'https://shop.example', 'image_id': 'i0',
-                 'image_base64': 'large-image-data'} if action == 'capture_image' else
-                {'session_id': 's'*43, 'snapshot_id': 'a'*32,
-                 'url': 'https://shop.example', 'visible_text': 'untrusted', 'elements': [],
-                 'images': [{'image_id': 'i0', 'alt': 'PS5'}]})
+        data = {'session_id': 's'*43, 'snapshot_id': 'a'*32,
+                'url': 'https://shop.example', 'visible_text': 'untrusted', 'elements': []}
         return Response(json.dumps(data), media_type='application/json')
     navigate = Mock(side_effect=navigate_result)
     monkeypatch.setattr(main, 'execute_navigation', navigate)
     with TestClient(main.app, base_url='http://127.0.0.1:8000') as client:
-        assert set(TOOLS).issubset({tool['name'] for tool in rpc(client).json()['result']['tools']})
+        names = {tool['name'] for tool in rpc(client).json()['result']['tools']}
+        assert set(TOOLS).issubset(names)
+        assert 'capture_image' not in names
         response = rpc(client, 'tools/call', {'name': 'open_page', 'arguments': {'url': 'https://shop.example'}})
         assert not response.json()['result'].get('isError')
         assert response.json()['result']['structuredContent']['visible_text'] == 'untrusted'
-        response = rpc(client, 'tools/call', {'name': 'capture_image', 'arguments': {
-            'session_id': 's'*43, 'snapshot_id': 'a'*32, 'element_id': 'i0'}})
-        assert response.json()['result']['structuredContent']['image_base64'] == 'large-image-data'
-        assert 'large-image-data' not in response.json()['result']['content'][0]['text']
-        assert navigate.call_args.args[0] == 'capture_image'
+        assert navigate.call_args.args[0] == 'open_page'

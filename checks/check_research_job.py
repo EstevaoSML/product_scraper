@@ -1,6 +1,5 @@
 """Job integration with actual loop/adapter, fake external transports only."""
 import asyncio
-import base64
 import json
 from pathlib import Path
 import re
@@ -27,8 +26,6 @@ def setup_job(monkeypatch):
     client.pages[-1]['page_info'] = {
         'product_name': 'Console Nova PS5 Digital Edition 1TB',
         'description': 'Console PlayStation 5 digital com armazenamento de 1TB.',
-        'is_product': True,
-        'image_base64': base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode(),
     }
     sequence = iter(decisions())
     recorded = {}
@@ -89,8 +86,7 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     assert scrape[-1]['url'] == client.pages[-1]['url']
     assert scrape[-1]['ps5_info']['product_name'] == PRODUCT
     assert scrape[-1]['ps5_info']['description'].startswith('Console digital')
-    image = tmp_path/'scrapes'/'images'/Path(scrape[-1]['ps5_info']['image_dir']).name
-    assert image.read_bytes() == b'\x89PNG\r\n\x1a\nfixture'
+    assert set(scrape[-1]['ps5_info']) == {'product_name', 'description'}
     assert json.loads(output)['scrape_output'] == str(scrape_path)
 
 
@@ -103,21 +99,21 @@ def check_local_key_file(monkeypatch,tmp_path):
 
 def check_agent_assessments_without_product_have_fixed_null_schema(tmp_path):
     assessments = [{'url': WEBSITE+'search', 'has_ps5_info': False,
-                    'ps5_info': {'image_dir': None, 'product_name': None, 'description': None}}]
+                    'ps5_info': {'product_name': None, 'description': None}}]
     path = research_job.save_agent_assessments(assessments, tmp_path, '20260923T120000000000Z-'+'a'*32)
     saved = json.loads(path.read_text(encoding='utf-8'))
     assert saved == assessments
     assert not (tmp_path/'images').exists()
 
 
-def check_agent_assessments_save_selected_image_larger_than_former_limit(tmp_path):
-    png = b'\x89PNG\r\n\x1a\n' + b'x' * 250_000
+def check_agent_assessments_contain_no_image_fields(tmp_path):
     assessments = [{'url': WEBSITE+'console/p', 'has_ps5_info': True,
-        'ps5_info': {'image_dir': None, 'product_name': 'Console PS5 Digital Edition',
-                     'description': 'Produto'}, '_image_base64': base64.b64encode(png).decode()}]
+        'ps5_info': {'product_name': 'Console PS5 Digital Edition',
+                     'description': 'Produto'}}]
     path = research_job.save_agent_assessments(assessments, tmp_path, '20260923T120000000000Z-'+'b'*32)
     saved = json.loads(path.read_text(encoding='utf-8'))
-    assert Path(saved[0]['ps5_info']['image_dir']).read_bytes() == png
+    assert saved == assessments
+    assert not (tmp_path/'images').exists()
 
 
 def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,capsys):
@@ -135,7 +131,7 @@ def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,c
     assert len(list(folder.glob('research-*.json'))) == 2
     assert len(list(folder.glob('diagnostics-*.json'))) == 2
     assert len(list((tmp_path/'outputs'/'scrapes').glob('scrape-*.json'))) == 2
-    assert len(list((tmp_path/'outputs'/'scrapes'/'images').glob('ps5-*.png'))) == 2
+    assert not (tmp_path/'outputs'/'scrapes'/'images').exists()
     assert not list((tmp_path/'outputs').glob('*.json'))
     runs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert runs[0]['run_id'] != runs[1]['run_id']
@@ -154,7 +150,7 @@ def check_large_pages_fit_budget_and_complete_with_cleanup(monkeypatch,tmp_path,
     result = asyncio.run(research_job.run(arguments(tmp_path)))
     assert result['status'] == 'complete'
     assert result['product']['seller'] == 'Loja Azul'
-    assert [name for name, _ in client.calls] == ['open_page','search_site','follow_link','capture_image','close_session']
+    assert [name for name, _ in client.calls] == ['open_page','search_site','follow_link','close_session']
     summary = json.loads(capsys.readouterr().out)
     assert summary['budgets']['calls'] == 3 and summary['navigation']['cleanup'] == 'closed'
 
@@ -189,9 +185,6 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
                 assert json.loads(payload)['status']=='complete'
                 assert re.fullmatch(r'reports/\d{8}T\d{12}Z-[a-f0-9]{32}\.json', name)
                 events.append('report')
-            elif name.startswith('scrapes/images/'):
-                assert payload.startswith(b'\x89PNG\r\n\x1a\n')
-                events.append('image')
             else:
                 saved = json.loads(payload)
                 assert name.startswith('scrapes/scrape-') and len(saved) == 3
@@ -202,7 +195,7 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
     monkeypatch.setattr(identity,'ManagedIdentityCredential',Credential)
     monkeypatch.setattr(blobs,'BlobServiceClient',Storage)
     result = asyncio.run(research_job.run(arguments(tmp_path,storage_account='research123',identity_client_id='agent-identity')))
-    assert result['status']=='complete' and events==['acquire','release','report','image','scrape']
+    assert result['status']=='complete' and events==['acquire','release','report','scrape']
 
 
 @pytest.mark.parametrize('option', ['identity','account','key'])

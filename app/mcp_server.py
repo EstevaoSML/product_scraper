@@ -15,7 +15,7 @@ from app import error_log
 
 
 def create_server(request_model, execute, max_response_bytes, navigate=None):
-    from app.navigation import IMAGE_SCHEMA, TOOLS, SNAPSHOT_SCHEMA
+    from app.navigation import TOOLS, SNAPSHOT_SCHEMA
     async def list_tools(context, params):
         return ListToolsResult(tools=[Tool(
             name="scrape_html",
@@ -30,8 +30,7 @@ def create_server(request_model, execute, max_response_bytes, navigate=None):
             annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False,
                                         idempotent_hint=False, open_world_hint=True),
         )] + ([Tool(name=name, description=description, input_schema=model.model_json_schema(),
-                     output_schema=({"type": "object", "required": ["session_id", "closed"]} if name == "close_session"
-                                    else IMAGE_SCHEMA if name == "capture_image" else SNAPSHOT_SCHEMA),
+                     output_schema=({"type": "object", "required": ["session_id", "closed"]} if name == "close_session" else SNAPSHOT_SCHEMA),
                      annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False,
                                                  idempotent_hint=False, open_world_hint=True))
                for name, (model, description) in TOOLS.items()] if navigate else []))
@@ -58,9 +57,6 @@ def create_server(request_model, execute, max_response_bytes, navigate=None):
             data = json.loads(response.body)
             data["request_id"] = request_id
             text_data = copy.deepcopy(data)
-            text_data.pop("image_base64", None)
-            if isinstance(text_data.get("page_info"), dict):
-                text_data["page_info"].pop("image_base64", None)
             result = CallToolResult(structured_content=data,
                                     content=[TextContent(type="text", text=json.dumps(text_data, ensure_ascii=False))])
             # Account for text + structured HTML, including escaping and RPC envelope.

@@ -147,34 +147,25 @@ never included in these diagnostics.
 for each rejected decision. The next retry receives a specific corrective hint,
 and an exhausted invalid-decision limit includes the last code in `reason`.
 No raw model output or exception text is logged. `requested_identity_mismatch`
-means the literal identity check failed: the current validator requires all query
-words in the observed identity, without translation or synonym matching. English
-queries against Portuguese names can therefore be conservatively rejected. This
-does not prove that the retailer lacks the product; use an observed local-language
-product name for a separate search or accept a partial result. Variant, bundle,
-seller and evidence checks are not relaxed by retry feedback.
+means a distinguishing query term was absent from the observed identity. The
+validator normalizes accents, `PS5`/`PlayStation 5`, and `Digital Edition`/`Edição
+Digital`; model, capacity, bundle and other variant terms must still be supported.
+Seller and evidence checks are not relaxed by retry feedback.
 
 Every completed local agent run saves a compact result at
 `outputs/scrapes/scrape-<timestamp>-<run_id>.json`. The file is an ordered array
 with one object for every page assessed by the Agent. Each object contains only
-`url`, `has_ps5_info` and `ps5_info`; the nested object contains `image_dir`,
-`product_name` and `description`, with missing values represented as null. The
-Agent decides these values from the current observation. The scraper only checks
-that the product name and selected image ID were actually observed.
+`url`, `has_ps5_info` and `ps5_info`; the nested object contains `product_name`
+and `description`, with missing values represented as null. The Agent decides
+these values from the current observation. Product images and image URLs are not
+collected, sent to the Agent or stored.
 
-The browser exposes bounded image candidates as `i0`, `i1`, and so on. When the
-Agent marks a page positive and selects one of those IDs, the host calls
-`capture_image` before closing the session. The rendered PNG is saved as
-`outputs/scrapes/images/ps5-<timestamp>-<run_id>-<iteration>.png`.
-There is no separate 200 KB image limit; the complete navigation result remains
-subject to the MCP response-size safety envelope.
-The host strips image bytes from model context, never saves session capabilities,
-and records the JSON path as `scrape_output` in diagnostics. Search refinements
+The host never saves session capabilities and records the JSON path as
+`scrape_output` in diagnostics. Search refinements
 and pagination links are hidden from the model after search so it must choose an
-observed product result. Treat saved descriptions and images as untrusted website
-data. Azure jobs store the final report under `reports/`, the assessment array
-under `scrapes/`, and Agent-selected images under `scrapes/images/` in private
-Blob Storage.
+observed product result. Treat saved descriptions as untrusted website data. Azure
+jobs store the final report under `reports/` and the assessment array under
+`scrapes/` in private Blob Storage.
 
 `model_input_budget` means the conservative input estimate exceeded the remaining
 token allowance before dispatch. Zero model calls with one navigation operation
@@ -182,8 +173,8 @@ can indicate this preflight stop; it does not establish an invalid API key.
 Increasing the USD cap does not increase the input token limit.
 Every snapshot is filtered before dispatch, using the trusted navigation stage:
 homepages expose search fields; results expose search fields and query-matching
-links; product pages prioritize every product's identity, image candidates and
-complete offers, without navigation menus. Product/offer indexes remain unchanged.
+links; product pages prioritize every product's identity and complete offers,
+without navigation menus. Product/offer indexes remain unchanged.
 Other unrelated product attributes are omitted. Relevant visible lines and their
 neighbors retain variant, seller, price and contradictory evidence as exact excerpts.
 Navigation views are capped at 4,000/7,000 serialized bytes and leave 8,000 input

@@ -1,7 +1,6 @@
 """Manual Azure Container Apps Job entry point; also usable locally."""
 import argparse
 import asyncio
-import base64
 import copy
 from datetime import datetime, timezone
 import json
@@ -18,25 +17,12 @@ from app.research_storage import exclusive_research
 
 
 def save_agent_assessments(assessments, scrape_folder, file_id):
-    """Persist the Agent's ordered per-page decisions and selected images."""
+    """Persist the Agent's ordered per-page product assessments."""
     folder = Path(scrape_folder)
     folder.mkdir(parents=True, exist_ok=True)
     payload = []
-    for index, assessment in enumerate(assessments, 1):
+    for assessment in assessments:
         entry = copy.deepcopy({key: value for key, value in assessment.items() if not key.startswith('_')})
-        encoded = assessment.get('_image_base64')
-        if isinstance(encoded, str):
-            try:
-                image = base64.b64decode(encoded, validate=True)
-            except (ValueError, TypeError):
-                image = b''
-            if image.startswith(b'\x89PNG\r\n\x1a\n'):
-                image_folder = folder / 'images'
-                image_folder.mkdir(parents=True, exist_ok=True)
-                image_path = image_folder / f'ps5-{file_id}-{index:02d}.png'
-                with image_path.open('xb') as output:
-                    output.write(image)
-                entry['ps5_info']['image_dir'] = str(image_path)
         payload.append(entry)
     destination = folder / f'scrape-{file_id}.json'
     with destination.open('x', encoding='utf-8') as output:
@@ -111,20 +97,9 @@ async def run(args):
                                                               overwrite=False), 20)
                 destination = f'reports/{file_id}.json'
                 cloud_assessments = []
-                for index, assessment in enumerate(assessments, 1):
+                for assessment in assessments:
                     entry = copy.deepcopy({key: value for key, value in assessment.items()
                                            if not key.startswith('_')})
-                    encoded = assessment.get('_image_base64')
-                    if isinstance(encoded, str):
-                        try:
-                            image = base64.b64decode(encoded, validate=True)
-                        except (ValueError, TypeError):
-                            image = b''
-                        if image.startswith(b'\x89PNG\r\n\x1a\n'):
-                            image_name = f'scrapes/images/ps5-{file_id}-{index:02d}.png'
-                            await asyncio.wait_for(container.upload_blob(image_name, image,
-                                                                          overwrite=False), 20)
-                            entry['ps5_info']['image_dir'] = image_name
                     cloud_assessments.append(entry)
                 scrape_destination = f'scrapes/scrape-{file_id}.json'
                 await asyncio.wait_for(container.upload_blob(
