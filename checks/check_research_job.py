@@ -116,6 +116,22 @@ def check_agent_assessments_contain_no_image_fields(tmp_path):
     assert not (tmp_path/'images').exists()
 
 
+def check_agent_assessments_deduplicate_url_and_prefer_positive(tmp_path):
+    url = WEBSITE + 'console/p'
+    assessments = [
+        {'url': url, 'has_ps5_info': False,
+         'ps5_info': {'product_name': None, 'description': None}},
+        {'url': url, 'has_ps5_info': True,
+         'ps5_info': {'product_name': PRODUCT, 'description': 'First supported description'}},
+        {'url': url, 'has_ps5_info': True,
+         'ps5_info': {'product_name': PRODUCT, 'description': 'Different duplicate description'}},
+    ]
+    path = research_job.save_agent_assessments(
+        assessments, tmp_path, '20260923T120000000000Z-' + 'c' * 32)
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    assert saved == [assessments[1]]
+
+
 def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,capsys):
     monkeypatch.chdir(tmp_path)
     for _ in range(2):

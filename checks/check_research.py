@@ -46,6 +46,30 @@ def check_report_rejects_unsupported_or_mixed_facts(mutation):
         validate_report(candidate, snapshots, PRODUCT)
 
 
+def check_visible_pix_and_installment_prices_do_not_invalidate_direct_offer():
+    observation = pages()[2]
+    observation['visible_text'] += '\nR$ 2.199,90 no Pix\n10x de R$ 249,99\nDe R$ 2.899,90'
+    candidate = report(observation)
+    result = validate_report(candidate, {observation['snapshot_id']: observation}, PRODUCT)
+    assert result['status'] == 'complete'
+    assert result['product']['price'] == observation['products'][0]['offers']['price']
+
+
+def check_redundant_product_inspection_is_not_dispatched_or_recorded_twice():
+    client, metrics, assessments = SyntheticMCP(), {}, []
+    sequence = decisions()[:2] + [
+        envelope({'tool': 'inspect_page', 'arguments': {}}, positive=True),
+        envelope({'report': report()}, positive=True),
+    ]
+    result = asyncio.run(research(client, scripted(sequence), WEBSITE, PRODUCT,
+                                  metrics=metrics, on_assessment=assessments.append))
+    assert result['status'] == 'complete'
+    assert [name for name, _ in client.calls] == [
+        'open_page', 'search_site', 'follow_link', 'close_session']
+    assert metrics['skipped_inspections'] == 1
+    assert len({entry['url'] for entry in assessments}) == len(assessments) == 3
+
+
 @pytest.mark.parametrize('decision', [
     {'tool': 'execute_script', 'arguments': {}},
     {'tool': 'scrape_html', 'arguments': {'url': 'https://attacker.invalid/'}},

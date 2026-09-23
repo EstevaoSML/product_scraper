@@ -60,7 +60,7 @@ DECISION_REJECTIONS = {
     'Structured product name is not visible on the page': ('product_name_not_visible', 'Choose a Product whose name appears in visible text, or return partial with null fields.'),
     'Identity must match the selected Product name': ('product_identity_mismatch', 'Name and variant must be literal parts of the selected Product name.'),
     'Unobserved quote or value': ('ungrounded_evidence', 'Use short exact quotes from the original observation and literal values. Do not quote reconstructed filtered objects.'),
-    'Fact belongs to another offer or is normalized without evidence': ('offer_value_mismatch', 'Use exact values from the selected direct Offer, including currency, seller and availability. Do not normalize values or combine offers.'),
+    'Fact belongs to another offer or is normalized without evidence': ('offer_value_mismatch', 'Use exact values from the selected direct Offer, including price, currency, seller and availability. Visible list, installment or Pix/cash prices do not invalidate that Offer; do not substitute them or combine offers.'),
     'Offer association cannot be established': ('missing_direct_offer', 'Without a selected direct Offer, leave price, currency, seller and availability null and finish partial.'),
     'A direct Offer is required, not AggregateOffer': ('missing_direct_offer', 'AggregateOffer is insufficient; select a direct Offer or leave financial fields null.'),
     'Unknown product or offer': ('unknown_product_offer', 'Use original zero-based product and offer indexes; do not renumber the filtered view.'),

@@ -111,6 +111,9 @@ Failed cleanup is recorded as `cleanup=failed`, never reported as successful.
 The public report has `status`, `product`, `evidence` and nullable `reason`.
 Product fields are name, variant, price, currency, seller and availability, with
 literal string values or null. Prices are not silently converted or normalized.
+Retail pages may display list, installment and Pix/cash prices together. The
+selected direct `Offer` remains canonical for financial fields; those display
+alternatives alone do not make the result contradictory.
 Every non-null value has an exact quote, source_url and observed_at.
 
 Internal reports also select zero-based `product_index` and `offer_index` from

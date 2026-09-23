@@ -16,14 +16,25 @@ from app.research_openai import ModelBudget, OpenAIDecider, SecretGuard
 from app.research_storage import exclusive_research
 
 
+def unique_agent_assessments(assessments):
+    """Keep URL order and prefer a positive assessment over an earlier negative."""
+    payload, indexes = [], {}
+    for assessment in assessments:
+        entry = copy.deepcopy({key: value for key, value in assessment.items() if not key.startswith('_')})
+        url = entry.get('url')
+        if url not in indexes:
+            indexes[url] = len(payload)
+            payload.append(entry)
+        elif not payload[indexes[url]].get('has_ps5_info') and entry.get('has_ps5_info'):
+            payload[indexes[url]] = entry
+    return payload
+
+
 def save_agent_assessments(assessments, scrape_folder, file_id):
     """Persist the Agent's ordered per-page product assessments."""
     folder = Path(scrape_folder)
     folder.mkdir(parents=True, exist_ok=True)
-    payload = []
-    for assessment in assessments:
-        entry = copy.deepcopy({key: value for key, value in assessment.items() if not key.startswith('_')})
-        payload.append(entry)
+    payload = unique_agent_assessments(assessments)
     destination = folder / f'scrape-{file_id}.json'
     with destination.open('x', encoding='utf-8') as output:
         json.dump(payload, output, ensure_ascii=False, indent=2)
@@ -96,11 +107,7 @@ async def run(args):
                 await asyncio.wait_for(container.upload_blob(f'reports/{file_id}.json', payload,
                                                               overwrite=False), 20)
                 destination = f'reports/{file_id}.json'
-                cloud_assessments = []
-                for assessment in assessments:
-                    entry = copy.deepcopy({key: value for key, value in assessment.items()
-                                           if not key.startswith('_')})
-                    cloud_assessments.append(entry)
+                cloud_assessments = unique_agent_assessments(assessments)
                 scrape_destination = f'scrapes/scrape-{file_id}.json'
                 await asyncio.wait_for(container.upload_blob(
                     scrape_destination, json.dumps(cloud_assessments, ensure_ascii=False),
