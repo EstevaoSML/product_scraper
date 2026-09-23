@@ -28,6 +28,16 @@ if (e.form && (e.form.querySelector('input[type=password]') || e.form.method.toL
 const label=[e.name,e.id,e.getAttribute('aria-label'),e.placeholder].join(' ');
 return e.type==='search' || !!e.closest('[role=search]') || /(^|[\\s_-])(q|query|search|busca|buscar|pesquisa|pesquisar)([\\s_-]|$)/i.test(label);
 """
+RESULTS_READY = """
+return Array.from(document.querySelectorAll('a[href]')).some(a=>{
+  if (!a.getClientRects().length) return false;
+  try {
+    const path=new URL(a.href,location.href).pathname.toLowerCase();
+    return /\\/(?:p|product|produto)(?:\\/|$)/.test(path) &&
+      (a.innerText||a.getAttribute('aria-label')||'').trim().length>4;
+  } catch (_) { return false; }
+});
+"""
 SNAPSHOT = """
 const visible=e=>!!(e.getClientRects().length) && getComputedStyle(e).visibility!=='hidden';
 const rows=[];
@@ -219,6 +229,15 @@ class BrowserSession:
         else:
             raise NavigationError('unknown_action')
         self.settle()
+        if action == 'search_site':
+            # Retail SPAs often render the result cards several seconds after
+            # document.readyState. Wait here so the Agent does not spend model
+            # calls repeatedly asking inspect_page for the same search page.
+            try:
+                WebDriverWait(self.driver, 8, poll_frequency=0.5).until(
+                    lambda d: d.execute_script(RESULTS_READY))
+            except TimeoutException:
+                pass
         return self.snapshot()
 
 

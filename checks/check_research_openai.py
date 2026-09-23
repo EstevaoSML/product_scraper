@@ -127,7 +127,7 @@ def check_large_observation_stops_before_any_request():
     with pytest.raises(BudgetExceeded) as caught:
         asyncio.run(OpenAIDecider(http,CANARY,budget)([
             {'role':'system','content':'trusted'}, {'role':'user','content':'task'},
-            {'role':'tool','content':'x'*24000}]))
+            {'role':'tool','content':'x'*33000}]))
     assert caught.value.code == 'model_input_budget'
     assert not http.calls and budget.calls == 0 and budget.cost == 0
 

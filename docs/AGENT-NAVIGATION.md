@@ -42,6 +42,15 @@ HTTP 409 is reserved for session or element conflicts. Browser failures use HTTP
 
 Snapshots include up to 20,000 characters of visible text, the first 100 visible input/link candidates, bounded Product JSON-LD, product-page metadata and up to 20 image candidates. The scraper does not decide whether a page is a product page and does not choose the product image. The Agent returns a page assessment and an observed `image_id`; `capture_image` then returns that rendered PNG for host-side persistence. There is no separate per-image size cap; each complete navigation result remains bounded by the navigation response envelope. Binary image data is omitted from the MCP text fallback to avoid duplication. Truncation is indicated for text and oversized structured data. Product JSON-LD and metadata are website-provided evidence and can be stale or incorrect; the agent should reconcile them with the visible product page. Full HTML remains available through `scrape_html`, which requires the browser slot to be free.
 
+The built-in Agent does not send that complete snapshot unchanged to the model.
+Its stage-aware view sends only the search control on a homepage, relevant observed
+links and text excerpts on a result page, and product records, offers, metadata,
+image candidates and relevant exact text excerpts on a product page. This keeps
+scripts, styles, navigation chrome and repeated markup out of the model context.
+After a search, the browser waits up to eight seconds for a rendered product link
+so dynamic retail pages do not consume repeated model calls merely waiting for
+cards to appear.
+
 ## Bounded agent loop
 
 `app.research.research(client, decide, website, product)` remains the provider-neutral

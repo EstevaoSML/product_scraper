@@ -37,6 +37,13 @@ def compact_observation(content, query, max_bytes, *, stage='results'):
     if wire_size(render()) > max_bytes:
         raise BudgetExceeded('model_input_budget')
     words = set(re.findall(r'\w+', query.casefold()))
+    # Retailers frequently spell the same console family as either "PS5" or
+    # "PlayStation 5". Expand only this identity alias so the exact console
+    # result ranks above games, controllers and unrelated "Digital" products.
+    if 'ps5' in words:
+        words.update(('playstation', '5'))
+    if 'playstation' in words and '5' in words:
+        words.add('ps5')
     def relevance(element):
         label = ' '.join(str(element.get(key, '')) for key in
                          ('accessible_name', 'placeholder', 'name', 'href'))

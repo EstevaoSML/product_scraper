@@ -81,7 +81,7 @@ identical searches/links are rejected. Blocked pages stop before another decisio
 |---|---|
 | Session | 180 seconds, reserving the final 10 seconds for cleanup |
 | Navigation | 10 attempts including open; 5 followed-link attempts |
-| Model | 8 calls; 24,000 cumulative input and 8,000 cumulative output tokens |
+| Model | 8 calls; 32,000 cumulative input and 8,000 cumulative output tokens |
 | Per model call | 2,048 output tokens including reasoning; 45 seconds |
 | Invalid decisions/reports | Up to 2 corrective retries |
 | MCP 429 | Up to 2 retries honoring delay and remaining time |

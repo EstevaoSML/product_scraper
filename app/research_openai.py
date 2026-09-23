@@ -39,7 +39,7 @@ class ModelBudget:
     token bound for this text-only request. Unknown usage retains its full reserve.
     Prices are configuration, not a provider-side billing guarantee.
     """
-    def __init__(self, max_cost_usd, *, max_input_tokens=24000,
+    def __init__(self, max_cost_usd, *, max_input_tokens=32000,
                  max_output_tokens=8000, max_calls=8,
                  input_rate=INPUT_USD_PER_MILLION, output_rate=OUTPUT_USD_PER_MILLION):
         self.limit = Decimal(str(max_cost_usd))
@@ -47,7 +47,7 @@ class ModelBudget:
         if (not self.limit.is_finite() or not 0 < self.limit <= 10
                 or not self.input_rate.is_finite() or self.input_rate <= 0
                 or not self.output_rate.is_finite() or self.output_rate <= 0
-                or not 1 <= max_calls <= 8 or not 1 <= max_input_tokens <= 24000
+                or not 1 <= max_calls <= 8 or not 1 <= max_input_tokens <= 32000
                 or not 1 <= max_output_tokens <= 8000):
             raise ValueError('Invalid model budget')
         self.max_input, self.max_output, self.max_calls = max_input_tokens, max_output_tokens, max_calls

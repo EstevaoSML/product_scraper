@@ -37,9 +37,13 @@ class Driver:
         self.text = 'Sony PS5 Digital Edition BRL 3000 in stock'
         self.scripts = [json.dumps({'@graph': [{'@type': 'Product', 'name': 'PS5'}]})]
         self.eligible = True
+        self.results_ready_checks = 0
     def get(self, url): self.current_url = url
     def execute_script(self, script, *args):
         if script == browser.SEARCH_CHECK: return self.eligible
+        if script == browser.RESULTS_READY:
+            self.results_ready_checks += 1
+            return True
         if script == 'return document.readyState': return 'complete'
         if script.startswith('return arguments[0].form'): return self.form_url
         if script.startswith('return arguments[0].currentSrc'): return args[0].href
@@ -110,6 +114,7 @@ def check_search_navigation_snapshots_and_evidence(page):
     first = page.snapshot_id
     result = page.execute('search_site', action_args(page))
     assert page.driver.field.typed[0] == 'PS5'
+    assert page.driver.results_ready_checks == 1
     assert result['snapshot_id'] != first
     assert result['products'][0]['name'] == 'PS5'
     assert result['untrusted_content'] is True

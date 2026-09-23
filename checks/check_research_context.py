@@ -107,6 +107,20 @@ def check_results_prioritize_relevant_observed_links():
     assert {e['element_id'] for e in view['elements']} == {'e0','e1'}
 
 
+def check_results_rank_playstation_5_as_ps5_alias():
+    source = pages()[1]
+    source['elements'] = [
+        {'element_id': 'e1', 'action': 'follow_link', 'href': WEBSITE+'game/p',
+         'accessible_name': 'Jogo PS5'},
+        {'element_id': 'e2', 'action': 'follow_link', 'href': WEBSITE+'console/p',
+         'accessible_name': 'Console PlayStation 5 Digital 825GB'},
+        {'element_id': 'e3', 'action': 'follow_link', 'href': WEBSITE+'oven/p',
+         'accessible_name': 'Forno Digital'}]
+    view = json.loads(compact_observation(json.dumps(source), 'PS5 Digital Edition',
+                                          7000, stage='results'))
+    assert [element['element_id'] for element in view['elements']][:2] == ['e2', 'e1']
+
+
 def check_product_retains_conflicting_visible_evidence_and_sellers():
     source = pages()[2]
     source['visible_text'] += '\nWrong Disc edition\nSold by\nOther seller\nR$ 999'
