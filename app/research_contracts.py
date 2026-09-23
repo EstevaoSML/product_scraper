@@ -3,7 +3,7 @@ import json
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 REQUIRED_FIELDS = ('name', 'variant', 'price', 'currency', 'seller', 'availability')
 
@@ -70,7 +70,25 @@ class FinalDecision(Strict):
     report: Report
 
 
+class PageAssessment(Strict):
+    """Agent-authored assessment of the page in the current snapshot."""
+    has_ps5_info: bool
+    product_name: str | None = Field(min_length=1, max_length=1000)
+    description: str | None = Field(min_length=1, max_length=5000)
+    image_id: str | None = Field(pattern=r'^i[0-9]{1,2}$')
+
+    @model_validator(mode='after')
+    def consistent(self):
+        values = (self.product_name, self.description, self.image_id)
+        if not self.has_ps5_info and any(value is not None for value in values):
+            raise ValueError('A negative page assessment must contain null product fields')
+        if self.has_ps5_info and (self.product_name is None or self.description is None):
+            raise ValueError('A positive page assessment requires product name and description')
+        return self
+
+
 class DecisionEnvelope(Strict):
+    assessment: PageAssessment
     decision: SearchDecision | LinkDecision | InspectDecision | FinalDecision
 
 

@@ -9,7 +9,7 @@ import pytest
 from app.research import research, validate_report
 from app.research_contracts import DecisionEnvelope, REQUIRED_FIELDS
 from evals.retail_fixtures import (CANARY, PRODUCT, WEBSITE, SyntheticMCP, cases,
-                                    decisions, pages, report, scripted)
+                                    decisions, envelope, pages, report, scripted)
 
 
 @pytest.mark.parametrize('case', cases(), ids=lambda c: c['id'])
@@ -157,7 +157,7 @@ def check_busy_retries_respect_delay_and_global_budget():
 
 def check_snapshot_invalidated_after_search():
     sequence = decisions()
-    sequence[1]['arguments']['snapshot_id'] = f'{1:032x}'
+    sequence[1]['decision']['arguments']['snapshot_id'] = f'{1:032x}'
     client = SyntheticMCP()
     asyncio.run(research(client, scripted(sequence), WEBSITE, PRODUCT))
     assert 'follow_link' not in [n for n, _ in client.calls]
@@ -170,17 +170,49 @@ def check_search_refinements_and_pagination_are_hidden_and_rejected():
     choices = iter(decisions())
     async def decide(messages):
         decision = next(choices)
-        if decision.get('tool') == 'follow_link':
+        if decision['decision'].get('tool') == 'follow_link':
             observation = json.loads(messages[-1]['content'])
             assert 'e9' not in {element['element_id'] for element in observation['elements']}
         return decision
     client = SyntheticMCP(observations)
     assert asyncio.run(research(client, decide, WEBSITE, PRODUCT))['status'] == 'complete'
     bad = decisions()
-    bad[1]['arguments']['element_id'] = 'e9'
+    bad[1]['decision']['arguments']['element_id'] = 'e9'
     client = SyntheticMCP(observations)
     assert asyncio.run(research(client, scripted(bad), WEBSITE, PRODUCT))['status'] == 'partial'
     assert 'follow_link' not in [name for name, _ in client.calls]
+
+
+def check_agent_cannot_select_an_unobserved_product_image():
+    sequence = decisions()
+    sequence[2]['assessment']['image_id'] = 'i9'
+    client, assessments = SyntheticMCP(), []
+    result = asyncio.run(research(client, scripted(sequence[:2] + [sequence[2]] * 3),
+                                  WEBSITE, PRODUCT, on_assessment=assessments.append))
+    assert result['status'] == 'partial'
+    assert [entry['has_ps5_info'] for entry in assessments] == [False, False]
+    assert 'capture_image' not in [name for name, _ in client.calls]
+
+
+def check_agent_ps5_alias_assessment_is_saved_and_image_is_captured():
+    requested = 'PS5 Digital Edition'
+    product_name = 'Console PlayStation 5 Edição Digital'
+    observations = pages()
+    observations[2]['visible_text'] = product_name
+    observations[2]['products'][0]['name'] = product_name
+    sequence = decisions()
+    sequence[0]['decision']['arguments']['query'] = requested
+    sequence[2]['assessment'].update(product_name=product_name,
+                                     description='Console digital PlayStation 5.')
+    sequence[2]['decision'] = {'report': {'status': 'partial',
+        'fields': dict.fromkeys(REQUIRED_FIELDS), 'product_index': None,
+        'offer_index': None, 'reason': 'Offer details unavailable'}}
+    client, assessments = SyntheticMCP(observations), []
+    asyncio.run(research(client, scripted(sequence), WEBSITE, requested,
+                         on_assessment=assessments.append))
+    assert assessments[-1]['has_ps5_info'] is True
+    assert assessments[-1]['ps5_info']['product_name'] == product_name
+    assert client.calls[-2][0] == 'capture_image'
 
 
 def check_invalid_limits():
@@ -224,8 +256,8 @@ def check_identity_rejection_has_safe_actionable_feedback_and_cleanup():
     candidate = report()
     client, stats = SyntheticMCP(), {}
     # English query term is not present in the literal synthetic Product name.
-    sequence = decisions()[:2] + [{'report':candidate}] * 3
-    sequence[0]['arguments']['query'] = PRODUCT + ' Edition'
+    sequence = decisions()[:2] + [envelope({'report': candidate})] * 3
+    sequence[0]['decision']['arguments']['query'] = PRODUCT + ' Edition'
     messages_seen = []
     iterator = iter(sequence)
     async def decide(messages):
@@ -250,7 +282,7 @@ def check_grounding_feedback_allows_a_corrected_report():
     bad = report()
     bad['fields']['price']['value'] = 'invented'
     client, stats = SyntheticMCP(), {}
-    result = asyncio.run(research(client, scripted(decisions(bad) + [{'report':report()}]),
+    result = asyncio.run(research(client, scripted(decisions(bad) + [envelope({'report': report()}, positive=True)]),
                                   WEBSITE, PRODUCT, metrics=stats))
     assert result['status'] == 'complete'
     assert stats['rejections'][0]['code'] == 'ungrounded_evidence'
@@ -324,8 +356,8 @@ def check_refresh_after_stale_reference_then_resume():
             return await super().call_tool(name, args)
     client = Stale()
     result = asyncio.run(research(client, scripted(decisions()[:2] + [
-        {'tool': 'inspect_page', 'arguments': {}},
-        {'report': {'status':'partial','fields':dict.fromkeys(REQUIRED_FIELDS),
-                    'product_index':None,'offer_index':None,'reason':'Unavailable'}}]), WEBSITE, PRODUCT))
+        envelope({'tool': 'inspect_page', 'arguments': {}}),
+        envelope({'report': {'status':'partial','fields':dict.fromkeys(REQUIRED_FIELDS),
+                    'product_index':None,'offer_index':None,'reason':'Unavailable'}}, positive=True)]), WEBSITE, PRODUCT))
     assert result['status'] == 'partial'
-    assert [n for n, _ in client.calls] == ['open_page','search_site','follow_link','inspect_page','close_session']
+    assert [n for n, _ in client.calls] == ['open_page','search_site','follow_link','inspect_page','capture_image','close_session']

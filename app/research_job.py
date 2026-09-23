@@ -2,12 +2,12 @@
 import argparse
 import asyncio
 import base64
+import copy
 from datetime import datetime, timezone
 import json
 import logging
 import os
 from pathlib import Path
-import re
 import signal
 import uuid
 from urllib.parse import urlsplit
@@ -17,29 +17,14 @@ from app.research_openai import ModelBudget, OpenAIDecider, SecretGuard
 from app.research_storage import exclusive_research
 
 
-PS5 = re.compile(r'\b(?:ps\s*5|playstation\s*5)\b', re.I)
-
-
-def save_simple_scrape(snapshots, scrape_folder, file_id, fallback_url):
-    """Persist only the requested PS5 summary and a bounded rendered image."""
-    selected = None
-    for page in reversed(snapshots):
-        info = page.get('page_info')
-        if (isinstance(info, dict) and info.get('is_product') is True
-                and isinstance(info.get('product_name'), str)
-                and PS5.search(info['product_name'])):
-            selected = page
-            break
-    url = selected.get('url') if selected else (snapshots[-1].get('url') if snapshots else fallback_url)
-    product = {'image_dir': None, 'product_name': None, 'description': None}
+def save_agent_assessments(assessments, scrape_folder, file_id):
+    """Persist the Agent's ordered per-page decisions and selected images."""
     folder = Path(scrape_folder)
     folder.mkdir(parents=True, exist_ok=True)
-    if selected:
-        info = selected['page_info']
-        product['product_name'] = info['product_name'].strip() or None
-        description = info.get('description')
-        product['description'] = description.strip() if isinstance(description, str) and description.strip() else None
-        encoded = info.get('image_base64')
+    payload = []
+    for index, assessment in enumerate(assessments, 1):
+        entry = copy.deepcopy({key: value for key, value in assessment.items() if not key.startswith('_')})
+        encoded = assessment.get('_image_base64')
         if isinstance(encoded, str):
             try:
                 image = base64.b64decode(encoded, validate=True)
@@ -48,11 +33,11 @@ def save_simple_scrape(snapshots, scrape_folder, file_id, fallback_url):
             if image.startswith(b'\x89PNG\r\n\x1a\n'):
                 image_folder = folder / 'images'
                 image_folder.mkdir(parents=True, exist_ok=True)
-                image_path = image_folder / f'ps5-{file_id}.png'
+                image_path = image_folder / f'ps5-{file_id}-{index:02d}.png'
                 with image_path.open('xb') as output:
                     output.write(image)
-                product['image_dir'] = str(image_path)
-    payload = {'url': url, 'has_ps5_info': selected is not None, 'ps5_info': product}
+                entry['ps5_info']['image_dir'] = str(image_path)
+        payload.append(entry)
     destination = folder / f'scrape-{file_id}.json'
     with destination.open('x', encoding='utf-8') as output:
         json.dump(payload, output, ensure_ascii=False, indent=2)
@@ -84,7 +69,7 @@ async def run(args):
     guard = SecretGuard((mcp_key, model_key))
     guard.check({'url': args.url, 'product': args.product, 'endpoint': args.endpoint})
     stats = {}
-    snapshots = []
+    assessments = []
 
     async def work():
         import httpx
@@ -97,19 +82,19 @@ async def run(args):
                                            follow_redirects=False, trust_env=False) as mcp_http:
                 async with Client(streamable_http_client(args.endpoint, http_client=mcp_http)) as client:
                     result = await research(client, decide, args.url, args.product, metrics=stats,
-                                            on_snapshot=snapshots.append)
+                                            on_assessment=assessments.append)
                     guard.check(result)
                     return result
 
     if args.storage_account:
         if not args.identity_client_id:
             raise ValueError('Explicit agent managed identity required')
-        from azure.core.exceptions import ResourceExistsError
-        from azure.identity.aio import ManagedIdentityCredential
-        from azure.storage.blob.aio import BlobServiceClient
         import re
         if not re.fullmatch(r'[a-z0-9]{3,24}', args.storage_account):
             raise ValueError('Invalid storage account')
+        from azure.core.exceptions import ResourceExistsError
+        from azure.identity.aio import ManagedIdentityCredential
+        from azure.storage.blob.aio import BlobServiceClient
         async with ManagedIdentityCredential(client_id=args.identity_client_id) as credential:
             async with BlobServiceClient(f'https://{args.storage_account}.blob.core.windows.net',
                                          credential=credential, retry_total=0,
@@ -125,19 +110,39 @@ async def run(args):
                 await asyncio.wait_for(container.upload_blob(f'reports/{file_id}.json', payload,
                                                               overwrite=False), 20)
                 destination = f'reports/{file_id}.json'
+                cloud_assessments = []
+                for index, assessment in enumerate(assessments, 1):
+                    entry = copy.deepcopy({key: value for key, value in assessment.items()
+                                           if not key.startswith('_')})
+                    encoded = assessment.get('_image_base64')
+                    if isinstance(encoded, str):
+                        try:
+                            image = base64.b64decode(encoded, validate=True)
+                        except (ValueError, TypeError):
+                            image = b''
+                        if image.startswith(b'\x89PNG\r\n\x1a\n'):
+                            image_name = f'scrapes/images/ps5-{file_id}-{index:02d}.png'
+                            await asyncio.wait_for(container.upload_blob(image_name, image,
+                                                                          overwrite=False), 20)
+                            entry['ps5_info']['image_dir'] = image_name
+                    cloud_assessments.append(entry)
+                scrape_destination = f'scrapes/scrape-{file_id}.json'
+                await asyncio.wait_for(container.upload_blob(
+                    scrape_destination, json.dumps(cloud_assessments, ensure_ascii=False),
+                    overwrite=False), 20)
     else:
         result = await work()
         folder = Path(args.output_dir)
         folder.mkdir(parents=True, exist_ok=True)
         destination = folder / f'research-{file_id}.json'
         destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
-        scrape_destination = save_simple_scrape(snapshots, args.scrape_output_dir, file_id, args.url)
+        scrape_destination = save_agent_assessments(assessments, args.scrape_output_dir, file_id)
     # Only fixed metadata, never prompts, page bodies, request headers or SDK errors.
     summary = {'service': 'retail-agent', 'run_id': run_id, 'status': result['status'],
                       'prompt_version': PROMPT_VERSION, 'result': str(destination),
                       'budgets': budget.summary(), 'navigation': stats}
+    summary['scrape_output'] = str(scrape_destination)
     if not args.storage_account:
-        summary['scrape_output'] = str(scrape_destination)
         (folder / f'diagnostics-{file_id}.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     print(json.dumps(summary))
     return result

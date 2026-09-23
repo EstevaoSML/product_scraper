@@ -155,19 +155,26 @@ product name for a separate search or accept a partial result. Variant, bundle,
 seller and evidence checks are not relaxed by retry feedback.
 
 Every completed local agent run saves a compact result at
-`outputs/scrapes/scrape-<timestamp>-<run_id>.json`. Its only top-level fields are
-`url`, `has_ps5_info` and `ps5_info`. The nested object contains `image_dir`,
-`product_name` and `description`; missing values are null. A rendered product
-image is saved as `outputs/scrapes/images/ps5-<timestamp>-<run_id>.png` when
-the browser identifies a PS5 product page and the rendered PNG is available.
+`outputs/scrapes/scrape-<timestamp>-<run_id>.json`. The file is an ordered array
+with one object for every page assessed by the Agent. Each object contains only
+`url`, `has_ps5_info` and `ps5_info`; the nested object contains `image_dir`,
+`product_name` and `description`, with missing values represented as null. The
+Agent decides these values from the current observation. The scraper only checks
+that the product name and selected image ID were actually observed.
+
+The browser exposes bounded image candidates as `i0`, `i1`, and so on. When the
+Agent marks a page positive and selects one of those IDs, the host calls
+`capture_image` before closing the session. The rendered PNG is saved as
+`outputs/scrapes/images/ps5-<timestamp>-<run_id>-<iteration>.png`.
 There is no separate 200 KB image limit; the complete navigation result remains
 subject to the MCP response-size safety envelope.
 The host strips image bytes from model context, never saves session capabilities,
 and records the JSON path as `scrape_output` in diagnostics. Search refinements
 and pagination links are hidden from the model after search so it must choose an
 observed product result. Treat saved descriptions and images as untrusted website
-data. Azure jobs continue storing the final report in private Blob Storage and do
-not archive page observations or images by default.
+data. Azure jobs store the final report under `reports/`, the assessment array
+under `scrapes/`, and Agent-selected images under `scrapes/images/` in private
+Blob Storage.
 
 `model_input_budget` means the conservative input estimate exceeded the remaining
 token allowance before dispatch. Zero model calls with one navigation operation
@@ -175,9 +182,9 @@ can indicate this preflight stop; it does not establish an invalid API key.
 Increasing the USD cap does not increase the input token limit.
 Every snapshot is filtered before dispatch, using the trusted navigation stage:
 homepages expose search fields; results expose search fields and query-matching
-links; product pages prioritize every product's identity and complete offers,
-without navigation menus. Product/offer indexes remain unchanged. Image URLs and
-other unrelated product attributes are omitted. Relevant visible lines and their
+links; product pages prioritize every product's identity, image candidates and
+complete offers, without navigation menus. Product/offer indexes remain unchanged.
+Other unrelated product attributes are omitted. Relevant visible lines and their
 neighbors retain variant, seller, price and contradictory evidence as exact excerpts.
 Navigation views are capped at 4,000/7,000 serialized bytes and leave 8,000 input
 budget units for extraction; the request schema/instructions are also accounted.

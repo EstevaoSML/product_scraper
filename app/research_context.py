@@ -43,6 +43,19 @@ def compact_observation(content, query, max_bytes, *, stage='results'):
         return len(words & set(re.findall(r'\w+', label.casefold())))
 
     if stage == 'product':
+        page_info = source.get('page_info')
+        if isinstance(page_info, dict):
+            view['page_info'] = {key: page_info[key] for key in ('product_name', 'description')
+                                 if isinstance(page_info.get(key), str)}
+        view['images'] = []
+        for image in source.get('images', [])[:20]:
+            if not isinstance(image, dict):
+                continue
+            view['images'].append({key: image[key] for key in
+                                   ('image_id', 'alt', 'src', 'width', 'height') if key in image})
+            if wire_size(render()) > max_bytes:
+                view['images'].pop()
+                break
         products = source.get('products', [])
         identity = ('@type', 'name', 'model', 'sku', 'mpn', 'brand', 'color', 'size',
                     'category', 'additionalProperty', 'offers')

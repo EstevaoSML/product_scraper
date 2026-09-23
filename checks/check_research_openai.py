@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.research_openai import BudgetExceeded, ModelBudget, OpenAIDecider, SecretGuard, ProviderFailure
-from evals.retail_fixtures import CANARY, decisions
+from evals.retail_fixtures import CANARY, decisions, envelope
 
 
 class HTTP:
@@ -21,9 +21,15 @@ class HTTP:
 
 
 def response(status=200, *, decision=None, usage=None, state='completed', text=None, retry='1'):
+    payload = decision or decisions()[0]
+    if isinstance(payload, dict) and 'assessment' not in payload:
+        report = payload.get('report', {})
+        positive = bool(report.get('status') in ('complete', 'partial')
+                        and any(report.get('fields', {}).values()))
+        payload = envelope(payload, positive=positive)
     body = {'status': state, 'usage': usage or {'input_tokens': 100, 'output_tokens': 50},
             'output': [{'type': 'message', 'content': [{'type': 'output_text',
-                         'text': text if text is not None else json.dumps({'decision': decision or decisions()[0]})}]}]}
+                         'text': text if text is not None else json.dumps(payload)}]}]}
     return SimpleNamespace(status_code=status, headers={'Retry-After': retry}, content=json.dumps(body).encode(), json=lambda: body)
 
 

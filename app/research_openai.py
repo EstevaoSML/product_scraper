@@ -196,9 +196,12 @@ class OpenAIDecider:
             if len(texts) != 1:
                 raise ValueError('Missing or ambiguous model decision')
             self.guard.check(texts)
-            decision = DecisionEnvelope.model_validate_json(texts[0]).decision.model_dump()
+            envelope = DecisionEnvelope.model_validate_json(texts[0])
+            decision = envelope.decision.model_dump()
             report = decision.get('report')
             if self.context_was_compacted and report and report['status'] == 'not_found':
                 report['status'] = 'partial'
                 report['reason'] = 'Observation content was omitted to fit the input budget; absence cannot be established.'
-            return decision
+            result = envelope.model_dump()
+            result['decision'] = decision
+            return result

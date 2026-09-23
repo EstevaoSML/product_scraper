@@ -82,13 +82,14 @@ def check_local_job_entire_pipeline(monkeypatch,tmp_path,capsys):
     assert json.loads(diagnostics) == json.loads(output)
     assert CANARY not in diagnostics and 'SYNTHETIC_MCP_CREDENTIAL' not in diagnostics
     scrape_path = next((tmp_path/'scrapes').glob('scrape-*.json'))
-    scrape = json.loads(scrape_path.read_text())
-    assert set(scrape) == {'url', 'has_ps5_info', 'ps5_info'}
-    assert scrape['has_ps5_info'] is True
-    assert scrape['url'] == client.pages[-1]['url']
-    assert scrape['ps5_info']['product_name'] == 'Console Nova PS5 Digital Edition 1TB'
-    assert scrape['ps5_info']['description'].startswith('Console PlayStation 5')
-    image = tmp_path/'scrapes'/'images'/Path(scrape['ps5_info']['image_dir']).name
+    scrape = json.loads(scrape_path.read_text(encoding='utf-8'))
+    assert isinstance(scrape, list) and len(scrape) == 3
+    assert all(set(entry) == {'url', 'has_ps5_info', 'ps5_info'} for entry in scrape)
+    assert [entry['has_ps5_info'] for entry in scrape] == [False, False, True]
+    assert scrape[-1]['url'] == client.pages[-1]['url']
+    assert scrape[-1]['ps5_info']['product_name'] == PRODUCT
+    assert scrape[-1]['ps5_info']['description'].startswith('Console digital')
+    image = tmp_path/'scrapes'/'images'/Path(scrape[-1]['ps5_info']['image_dir']).name
     assert image.read_bytes() == b'\x89PNG\r\n\x1a\nfixture'
     assert json.loads(output)['scrape_output'] == str(scrape_path)
 
@@ -100,25 +101,23 @@ def check_local_key_file(monkeypatch,tmp_path):
     assert asyncio.run(research_job.run(arguments(tmp_path,key_file=str(key))))['status']=='complete'
 
 
-def check_simple_scrape_without_product_has_fixed_null_schema(tmp_path):
-    snapshots = [{'url': WEBSITE+'search', 'page_info': {
-        'product_name': 'Search results', 'description': 'PS5 offers',
-        'is_product': False, 'image_base64': base64.b64encode(b'not-a-png').decode()}}]
-    path = research_job.save_simple_scrape(snapshots, tmp_path, '20260923T120000000000Z-'+'a'*32, WEBSITE)
-    saved = json.loads(path.read_text())
-    assert saved == {'url': WEBSITE+'search', 'has_ps5_info': False,
-                     'ps5_info': {'image_dir': None, 'product_name': None, 'description': None}}
+def check_agent_assessments_without_product_have_fixed_null_schema(tmp_path):
+    assessments = [{'url': WEBSITE+'search', 'has_ps5_info': False,
+                    'ps5_info': {'image_dir': None, 'product_name': None, 'description': None}}]
+    path = research_job.save_agent_assessments(assessments, tmp_path, '20260923T120000000000Z-'+'a'*32)
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    assert saved == assessments
     assert not (tmp_path/'images').exists()
 
 
-def check_simple_scrape_saves_image_larger_than_former_limit(tmp_path):
+def check_agent_assessments_save_selected_image_larger_than_former_limit(tmp_path):
     png = b'\x89PNG\r\n\x1a\n' + b'x' * 250_000
-    snapshots = [{'url': WEBSITE+'console/p', 'page_info': {
-        'product_name': 'Console PS5 Digital Edition', 'description': 'Produto',
-        'is_product': True, 'image_base64': base64.b64encode(png).decode()}}]
-    path = research_job.save_simple_scrape(snapshots, tmp_path, '20260923T120000000000Z-'+'b'*32, WEBSITE)
-    saved = json.loads(path.read_text())
-    assert Path(saved['ps5_info']['image_dir']).read_bytes() == png
+    assessments = [{'url': WEBSITE+'console/p', 'has_ps5_info': True,
+        'ps5_info': {'image_dir': None, 'product_name': 'Console PS5 Digital Edition',
+                     'description': 'Produto'}, '_image_base64': base64.b64encode(png).decode()}]
+    path = research_job.save_agent_assessments(assessments, tmp_path, '20260923T120000000000Z-'+'b'*32)
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    assert Path(saved[0]['ps5_info']['image_dir']).read_bytes() == png
 
 
 def check_agent_default_directory_preserves_previous_runs(monkeypatch,tmp_path,capsys):
@@ -155,7 +154,7 @@ def check_large_pages_fit_budget_and_complete_with_cleanup(monkeypatch,tmp_path,
     result = asyncio.run(research_job.run(arguments(tmp_path)))
     assert result['status'] == 'complete'
     assert result['product']['seller'] == 'Loja Azul'
-    assert [name for name, _ in client.calls] == ['open_page','search_site','follow_link','close_session']
+    assert [name for name, _ in client.calls] == ['open_page','search_site','follow_link','capture_image','close_session']
     summary = json.loads(capsys.readouterr().out)
     assert summary['budgets']['calls'] == 3 and summary['navigation']['cleanup'] == 'closed'
 
@@ -185,17 +184,25 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
             return Lock()
         async def upload_blob(self,name,payload,**kwargs):
             assert client.calls[-1][0]=='close_session'
-            assert json.loads(payload)['status']=='complete'
-            assert name.startswith('reports/')
-            assert re.fullmatch(r'reports/\d{8}T\d{12}Z-[a-f0-9]{32}\.json', name)
             assert kwargs['overwrite'] is False
-            events.append('upload')
+            if name.startswith('reports/'):
+                assert json.loads(payload)['status']=='complete'
+                assert re.fullmatch(r'reports/\d{8}T\d{12}Z-[a-f0-9]{32}\.json', name)
+                events.append('report')
+            elif name.startswith('scrapes/images/'):
+                assert payload.startswith(b'\x89PNG\r\n\x1a\n')
+                events.append('image')
+            else:
+                saved = json.loads(payload)
+                assert name.startswith('scrapes/scrape-') and len(saved) == 3
+                assert saved[-1]['has_ps5_info'] is True
+                events.append('scrape')
     class Credential(Context):
         def __init__(self,**kwargs): assert kwargs=={'client_id':'agent-identity'}
     monkeypatch.setattr(identity,'ManagedIdentityCredential',Credential)
     monkeypatch.setattr(blobs,'BlobServiceClient',Storage)
     result = asyncio.run(research_job.run(arguments(tmp_path,storage_account='research123',identity_client_id='agent-identity')))
-    assert result['status']=='complete' and events==['acquire','release','upload']
+    assert result['status']=='complete' and events==['acquire','release','report','image','scrape']
 
 
 @pytest.mark.parametrize('option', ['identity','account','key'])

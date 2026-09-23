@@ -73,7 +73,7 @@ def check_compacted_context_cannot_establish_not_found():
     result = asyncio.run(adapter([{'role':'system','content':'trusted'},
         {'role':'user','content':json.dumps({'product':PRODUCT})},
         {'role':'tool','content':json.dumps(large_page())}]))
-    assert result['report']['status'] == 'partial'
+    assert result['decision']['report']['status'] == 'partial'
     assert adapter.context_was_compacted and budget.calls == 1
     body = http.calls[0][1]['json']
     assert len(json.dumps(body,ensure_ascii=False,separators=(',',':')).encode()) + 1024 <= budget.max_input
