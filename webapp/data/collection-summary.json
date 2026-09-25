@@ -1,0 +1,66 @@
+{
+  "research_usd_accounted": "0.05849350",
+  "image_usd_accounted": "0.039525",
+  "total_usd_accounted": "0.09801850",
+  "authorized_budget_usd": "0.50",
+  "products_with_prices": 5,
+  "products_with_images": 5,
+  "runs": [
+    {
+      "product_id": "hyperx-alloy",
+      "batch": "piloto-5",
+      "status": "partial",
+      "research_usd_accounted": "0.01028900",
+      "image_usd_accounted": "0.006585",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "hyperx-cloud",
+      "batch": "piloto-5",
+      "status": "partial",
+      "research_usd_accounted": "0.01275675",
+      "image_usd_accounted": "0.006585",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "kingston-nv3",
+      "batch": "piloto-5",
+      "status": "partial",
+      "research_usd_accounted": "0.00594425",
+      "image_usd_accounted": "0.006580",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "logitech-g502",
+      "batch": "piloto-5",
+      "status": "partial",
+      "research_usd_accounted": "0.00563075",
+      "image_usd_accounted": "0.006570",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "ps5-digital",
+      "batch": "piloto-5",
+      "status": "partial",
+      "research_usd_accounted": "0.00539025",
+      "image_usd_accounted": "0.006620",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "hyperx-cloud",
+      "batch": "piloto-5-exact",
+      "status": "partial",
+      "research_usd_accounted": "0.01139075",
+      "image_usd_accounted": "0.006585",
+      "image_status": "generated"
+    },
+    {
+      "product_id": "hyperx-cloud",
+      "batch": "piloto-5-retry",
+      "status": "partial",
+      "research_usd_accounted": "0.00709175",
+      "image_usd_accounted": "0",
+      "image_status": "disabled"
+    }
+  ]
+}

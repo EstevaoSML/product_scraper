@@ -55,7 +55,51 @@ also use timestamped filenames. Azure uses
 `MCP_API_KEY`, `MCP_ENDPOINT`, `AZURE_CLIENT_ID` and `RESEARCH_STORAGE_ACCOUNT`,
 wired by Terraform. The OpenAI endpoint/model are fixed in trusted code.
 
-Manual Azure start (trusted CLI login and existing deployment required):
+### Optional product illustration
+
+The host-only `ProductImageTool.generate_product_image(ProductImageRequest)` in
+`app/research_images.py` uses **`gpt-image-2.5-flare`** via the Image API. It reuses
+the same `OPENAI_API_KEY` already loaded for GPT-5 mini. No new secret, MCP tool,
+browser permission, package or Terraform resource is required. The scraper never
+receives this key. The request contract permits only `product`; credentials,
+output paths, endpoints, quality and count are controlled by application code.
+
+Enable one image per search invocation with a separate explicit image budget:
+
+```powershell
+python -m app.research_job --url 'https://www.americanas.com.br/' --product 'PS5 Digital Edition' --max-cost-usd 0.05 --image-max-cost-usd 0.05 --key-file '.\secrets\api_key.txt'
+```
+
+Without `--image-max-cost-usd` (default zero), generation is disabled. Images are
+generated after browser cleanup from the user's original search label, even if
+the research result is partial; a blocked research result skips generation.
+This is a synthetic illustration, not the retailer's photo or evidence of an
+exact variant, price, seller or availability. It never fills research fields.
+
+Local PNG and metadata files use `outputs/agent/images/product-<timestamp>-<run_id>`
+with `.png` and `.json` extensions. Azure uses `images/` inside the existing private
+`research` Blob container. The diagnostic record contains an `image` result,
+including failure/skip reason, accounting and artifact path. An HTTP image failure
+does not replace the saved research report. Add the same image budget argument
+when starting an Azure job; rebuild the agent image to include the new module.
+
+Limits are enforced outside the model: one request, no retries (including 429),
+60 seconds total, `n=1`, `1024x1024`, `quality=low`, PNG, bounded response bytes,
+no external image downloads. Input accounting uses prompt UTF-8 bytes plus a
+margin; preflight reserves 1,024 image output tokens at $30/million and text input
+at $5/million. These are conservative local estimates, **not a provider-enforced
+dollar cap**. Provider usage updates accounting when available; unknown usage
+retains the reservation. Unexpected actual spend above the image allowance is
+reported as `budget_exceeded`; the tool cannot undo an already billed request.
+The image allowance is separate from `--max-cost-usd` for research.
+
+Documentation checked 2026-09-23:
+[Flare model](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare),
+[Image API generation and usage](https://developers.openai.com/api/docs/guides/image-generation).
+Account access/organization verification may still be required. Unit tests use
+synthetic responses and do not establish live model access or visual fidelity.
+
+### Azure invocation
 
 ```powershell
 az containerapp job start --name YOUR_RESEARCH_JOB --resource-group YOUR_RESOURCE_GROUP --container-name agent --args '--url=https://www.example-retailer.com/' '--product=Console Nova Digital 1TB' '--max-cost-usd=0.05'

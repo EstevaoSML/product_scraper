@@ -1,0 +1,32 @@
+[
+  {
+    "id": "ps5-digital",
+    "query": "PlayStation 5 Digital Slim 825GB CFI 2114B",
+    "name": "PlayStation 5 Digital Slim",
+    "category": "Games"
+  },
+  {
+    "id": "logitech-g502",
+    "query": "Mouse Logitech G502 HERO",
+    "name": "Logitech G502 HERO",
+    "category": "Periféricos"
+  },
+  {
+    "id": "hyperx-alloy",
+    "query": "Teclado HyperX Alloy Origins Core",
+    "name": "HyperX Alloy Origins Core",
+    "category": "Periféricos"
+  },
+  {
+    "id": "kingston-nv3",
+    "query": "SSD Kingston NV3 1TB",
+    "name": "Kingston NV3 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "hyperx-cloud",
+    "query": "Headset HyperX Cloud III Preto 727A8AA",
+    "name": "HyperX Cloud III",
+    "category": "Áudio"
+  }
+]

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.env*
+.terraform/
+*.tfstate*
+*.tfplan
+*.auto.tfvars.json
+deploy/config.json
+deploy/backend.generated.hcl
+*.lock
+!deploy/terraform/verification/*.tftest.hcl
+!deploy/seed_secrets.py
+!deploy/*/.terraform.lock.hcl

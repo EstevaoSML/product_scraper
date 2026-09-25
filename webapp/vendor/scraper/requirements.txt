@@ -1,0 +1,5 @@
+-c constraints.txt
+fastapi==0.141.1
+uvicorn==0.53.0
+selenium==4.49.0
+mcp==2.2.0

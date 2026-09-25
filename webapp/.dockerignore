@@ -1,0 +1,13 @@
+**/__pycache__
+**/*.pyc
+**/.env*
+**/secrets
+**/.git
+**/.terraform
+**/*.tfstate*
+**/*.tfplan
+**/*.tfvars
+**/*.lock
+*.zip
+preview.html
+work

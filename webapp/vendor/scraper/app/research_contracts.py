@@ -1,0 +1,227 @@
+"""Strict provider-neutral decisions and public retail reports."""
+import json
+import re
+import unicodedata
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+REQUIRED_FIELDS = ('name', 'variant', 'price', 'currency', 'seller', 'availability')
+
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+
+
+class Fact(Strict):
+    value: str = Field(min_length=1, max_length=1000)
+    snapshot_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    quote: str = Field(min_length=1, max_length=2000)
+
+
+class Fields(Strict):
+    name: Fact | None
+    variant: Fact | None
+    price: Fact | None
+    currency: Fact | None
+    seller: Fact | None
+    availability: Fact | None
+
+
+class Report(Strict):
+    status: Literal['complete', 'partial', 'not_found', 'blocked']
+    fields: Fields
+    # Indices reference the actual Product and its direct Offer in the snapshot.
+    product_index: int | None = Field(ge=0, le=19)
+    offer_index: int | None = Field(ge=0, le=99)
+    reason: str | None = Field(max_length=2000)
+
+
+class SearchArgs(Strict):
+    snapshot_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    element_id: str = Field(pattern=r'^e[0-9]{1,3}$')
+    query: str = Field(min_length=1, max_length=200, pattern=r'^[^\x00-\x1f\x7f]+$')
+
+
+class LinkArgs(Strict):
+    snapshot_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    element_id: str = Field(pattern=r'^e[0-9]{1,3}$')
+
+
+class InspectArgs(Strict):
+    pass
+
+
+class SearchDecision(Strict):
+    tool: Literal['search_site']
+    arguments: SearchArgs
+
+
+class LinkDecision(Strict):
+    tool: Literal['follow_link']
+    arguments: LinkArgs
+
+
+class InspectDecision(Strict):
+    tool: Literal['inspect_page']
+    arguments: InspectArgs
+
+
+class FinalDecision(Strict):
+    report: Report
+
+
+class PageAssessment(Strict):
+    """Agent-authored assessment of the page in the current snapshot."""
+    has_ps5_info: bool
+    product_name: str | None = Field(min_length=1, max_length=1000)
+    description: str | None = Field(min_length=1, max_length=5000)
+
+    @model_validator(mode='after')
+    def consistent(self):
+        values = (self.product_name, self.description)
+        if not self.has_ps5_info and any(value is not None for value in values):
+            raise ValueError('A negative page assessment must contain null product fields')
+        if self.has_ps5_info and (self.product_name is None or self.description is None):
+            raise ValueError('A positive page assessment requires product name and description')
+        return self
+
+
+class DecisionEnvelope(Strict):
+    assessment: PageAssessment
+    decision: SearchDecision | LinkDecision | InspectDecision | FinalDecision
+
+
+class Product(Strict):
+    name: str | None
+    variant: str | None
+    price: str | None
+    currency: str | None
+    seller: str | None
+    availability: str | None
+
+
+class Evidence(Strict):
+    quote: str
+    source_url: str
+    observed_at: str
+
+
+class Result(Strict):
+    status: Literal['complete', 'partial', 'not_found', 'blocked']
+    product: Product
+    evidence: dict[str, Evidence]
+    reason: str | None
+
+
+def empty_result(reason, status='partial'):
+    return Result(status=status, product=Product(**dict.fromkeys(REQUIRED_FIELDS)),
+                  evidence={}, reason=reason).model_dump()
+
+
+def tokens(value):
+    normalized = ''.join(character for character in
+                         unicodedata.normalize('NFKD', value.casefold())
+                         if not unicodedata.combining(character))
+    words = set(re.findall(r'\w+', normalized))
+    words = {'edition' if word == 'edicao' else word for word in words}
+    if 'ps5' in words or ('playstation' in words and '5' in words):
+        words.difference_update(('ps5', 'playstation', '5'))
+        words.add('playstation5')
+    # "Digital Edition" and Portuguese "Edição Digital" describe the same
+    # discless variant; "digital" carries the distinguishing information.
+    if 'digital' in words:
+        words.discard('edition')
+    return words
+
+
+def validate_report(candidate, snapshots, requested_product=None):
+    """Conservative grounding: one snapshot, one Product, one direct Offer.
+
+    Unstructured pages can support identity fields only. Financial facts require
+    an explicit structured Offer; this deliberately trades recall for precision.
+    JSON-LD is still untrusted and semantic correctness requires model evals.
+    """
+    report = Report.model_validate(candidate)
+    facts = {k: getattr(report.fields, k) for k in REQUIRED_FIELDS}
+    present = {k: v for k, v in facts.items() if v is not None}
+    if report.status in ('not_found', 'blocked') and present:
+        raise ValueError('Negative result cannot contain product facts')
+    if not present:
+        return empty_result(report.reason, report.status)
+    if not facts['name'] or not facts['variant']:
+        raise ValueError('Product and variant identity are required before reporting facts')
+    # The model chooses the product/offer. Only identity facts determine the
+    # authoritative snapshot; financial scalars are projected from that Offer
+    # below so transcription or an inferred seller cannot corrupt the result.
+    ids = {facts[key].snapshot_id for key in ('name', 'variant')}
+    if len(ids) != 1:
+        raise ValueError('Do not combine snapshots or offers')
+    page = snapshots.get(next(iter(ids)))
+    if page is None or not page.get('fetched_at') or page.get('status') == 'blocked':
+        raise ValueError('Missing usable observation')
+    observed = page['visible_text'] + '\n' + json.dumps(page.get('products', []), ensure_ascii=False)
+    selected = None
+    offer = None
+    if report.product_index is not None:
+        try:
+            selected = page.get('products', [])[report.product_index]
+            if not isinstance(selected, dict):
+                raise ValueError('Invalid product')
+            offers = selected.get('offers', [])
+            offers = offers if isinstance(offers, list) else [offers]
+            if report.offer_index is not None:
+                offer = offers[report.offer_index]
+                if not isinstance(offer, dict) or offer.get('@type') != 'Offer':
+                    raise ValueError('A direct Offer is required, not AggregateOffer')
+        except (IndexError, TypeError):
+            raise ValueError('Unknown product or offer') from None
+    elif report.offer_index is not None:
+        raise ValueError('Offer without product')
+    identity = facts['name'].value + ' ' + facts['variant'].value
+    if requested_product and not tokens(requested_product) <= tokens(identity):
+        raise ValueError('Requested product/variant not supported')
+    if selected is not None:
+        # Do not allow an accessory's description or another variant to establish identity.
+        name = str(selected.get('name', ''))
+        if (name.casefold() not in page['visible_text'].casefold()
+                and not tokens(name) <= tokens(page['visible_text'])):
+            raise ValueError('Structured product name is not visible on the page')
+        if facts['name'].value.casefold() not in name.casefold() or facts['variant'].value.casefold() not in name.casefold():
+            raise ValueError('Identity must match the selected Product name')
+        if requested_product and not tokens(requested_product) <= tokens(name):
+            raise ValueError('Structured product does not match request')
+    values, evidence = dict.fromkeys(REQUIRED_FIELDS), {}
+    for key in ('name', 'variant'):
+        fact = facts[key]
+        if fact.quote not in observed or fact.value.casefold() not in fact.quote.casefold():
+            raise ValueError('Unobserved quote or value')
+        if selected is None and fact.quote not in page['visible_text']:
+            raise ValueError('Unstructured identity needs visible evidence')
+        values[key] = fact.value
+        evidence[key] = Evidence(quote=fact.quote, source_url=page['url'], observed_at=page['fetched_at'])
+    if offer is None and any(facts[key] is not None for key in ('price', 'currency', 'seller', 'availability')):
+        raise ValueError('Offer association cannot be established')
+    if offer is not None:
+        field_keys = {'price': 'price', 'currency': 'priceCurrency',
+                      'seller': 'seller', 'availability': 'availability'}
+        for key, source_key in field_keys.items():
+            actual = offer.get(source_key)
+            if key == 'seller' and isinstance(actual, dict):
+                actual = actual.get('name')
+            if isinstance(actual, bool) or not isinstance(actual, (str, int, float)):
+                continue
+            value = str(actual)
+            if not 1 <= len(value) <= 1000 or value not in observed:
+                continue
+            values[key] = value
+            evidence[key] = Evidence(quote=value, source_url=page['url'], observed_at=page['fetched_at'])
+    if selected is None and requested_product:
+        identity_quote_words = tokens(facts['name'].quote) | tokens(facts['variant'].quote)
+        if identity_quote_words <= tokens(requested_product):
+            # An echoed query is visible text, but does not establish a listing.
+            # Return a safe partial directly rather than spend retries restating it.
+            return empty_result('Only the search query was evidenced; no specific product identity or offer was established.')
+    status = 'complete' if all(value is not None for value in values.values()) else 'partial'
+    return Result(status=status, product=Product(**values), evidence=evidence,
+                  reason=None if status == 'complete' else report.reason).model_dump()

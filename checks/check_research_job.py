@@ -97,6 +97,24 @@ def check_local_key_file(monkeypatch,tmp_path):
     assert asyncio.run(research_job.run(arguments(tmp_path,key_file=str(key))))['status']=='complete'
 
 
+def check_image_generation_uses_same_key_after_browser_cleanup(monkeypatch,tmp_path,capsys):
+    from app.research_images import ProductImageResult
+    from checks.check_research_images import PNG
+    client, _ = setup_job(monkeypatch)
+    async def generate(self, request):
+        assert client.calls[-1][0] == 'close_session'
+        assert self._api_key == CANARY and request.product == PRODUCT
+        return ProductImageResult(status='generated',attempts=1), PNG
+    monkeypatch.setattr(research_job.ProductImageTool,'generate_product_image',generate)
+    result = asyncio.run(research_job.run(arguments(tmp_path,image_max_cost_usd='0.05')))
+    assert result['status'] == 'complete'
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['image']['synthetic'] is True
+    assert Path(summary['image']['file']).read_bytes() == PNG
+    assert len(list((tmp_path/'images').glob('*.json'))) == 1
+    assert CANARY not in json.dumps(summary)
+
+
 def check_agent_assessments_without_product_have_fixed_null_schema(tmp_path):
     assessments = [{'url': WEBSITE+'search', 'has_ps5_info': False,
                     'ps5_info': {'product_name': None, 'description': None}}]
@@ -171,12 +189,19 @@ def check_large_pages_fit_budget_and_complete_with_cleanup(monkeypatch,tmp_path,
     assert summary['budgets']['calls'] == 3 and summary['navigation']['cleanup'] == 'closed'
 
 
-def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
+@pytest.mark.parametrize('with_image', [False, True])
+def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path,with_image):
     import azure.identity.aio as identity
     import azure.storage.blob.aio as blobs
     from azure.core.exceptions import ResourceExistsError
     client, _ = setup_job(monkeypatch)
     events = []
+    from app.research_images import ProductImageResult
+    from checks.check_research_images import PNG
+    async def generate(self, request):
+        assert client.calls[-1][0] == 'close_session' and self._api_key == CANARY
+        return ProductImageResult(status='generated',attempts=1), PNG
+    monkeypatch.setattr(research_job.ProductImageTool,'generate_product_image',generate)
     class Lease:
         async def renew(self): pass
         async def release(self): events.append('release')
@@ -201,6 +226,13 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
                 assert json.loads(payload)['status']=='complete'
                 assert re.fullmatch(r'reports/\d{8}T\d{12}Z-[a-f0-9]{32}\.json', name)
                 events.append('report')
+            elif name.startswith('images/'):
+                assert with_image
+                if name.endswith('.png'):
+                    assert payload == PNG
+                else:
+                    assert json.loads(payload)['synthetic'] is True
+                events.append('image')
             else:
                 saved = json.loads(payload)
                 assert name.startswith('scrapes/scrape-') and len(saved) == 3
@@ -210,8 +242,20 @@ def check_azure_job_saves_after_cleanup(monkeypatch,tmp_path):
         def __init__(self,**kwargs): assert kwargs=={'client_id':'agent-identity'}
     monkeypatch.setattr(identity,'ManagedIdentityCredential',Credential)
     monkeypatch.setattr(blobs,'BlobServiceClient',Storage)
-    result = asyncio.run(research_job.run(arguments(tmp_path,storage_account='research123',identity_client_id='agent-identity')))
-    assert result['status']=='complete' and events==['acquire','release','report','scrape']
+    result = asyncio.run(research_job.run(arguments(tmp_path,storage_account='research123',identity_client_id='agent-identity',
+                                                    image_max_cost_usd='0.05' if with_image else '0')))
+    assert result['status']=='complete' and events==['acquire','release','report','scrape'] + (['image','image'] if with_image else [])
+
+
+def check_blocked_research_skips_image_provider(monkeypatch,tmp_path,capsys):
+    client, _ = setup_job(monkeypatch)
+    client.pages[0]['status'] = 'blocked'
+    async def forbidden(*args): raise AssertionError('Image call after blocked page')
+    monkeypatch.setattr(research_job.ProductImageTool,'generate_product_image',forbidden)
+    result = asyncio.run(research_job.run(arguments(tmp_path,image_max_cost_usd='0.05')))
+    assert result['status'] == 'blocked'
+    assert json.loads(capsys.readouterr().out)['image']['reason'] == 'research_blocked'
+    assert client.calls[-1][0] == 'close_session'
 
 
 @pytest.mark.parametrize('option', ['identity','account','key'])

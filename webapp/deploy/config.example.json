@@ -1,0 +1,9 @@
+{
+  "subscription_id": "YOUR-AZURE-SUBSCRIPTION-ID",
+  "name": "precoclaro123",
+  "location": "brazilsouth",
+  "secret_operator_object_id": "YOUR-ENTRA-OBJECT-ID",
+  "operator_ipv4": "YOUR-PUBLIC-IPV4",
+  "suggestion_email": "",
+  "collection_cron": ""
+}
