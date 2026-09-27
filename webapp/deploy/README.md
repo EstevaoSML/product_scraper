@@ -11,6 +11,16 @@ Este pacote provisiona o site Flask, o scraper MCP e seu navegador, os jobs de s
 
 O build usa `az acr build` no Azure e não exige Docker local. A primeira execução cria recursos pagos: Container Apps, navegador sempre ativo, ACR, armazenamento, Private Endpoints e logs. O limite de US$ 0,05 do agente não limita a fatura da infraestrutura.
 
+## Validação local sem credenciais
+
+Com PowerShell 7 e Terraform instalados, execute na raiz do repositório:
+
+```powershell
+pwsh -File webapp/deploy/deploy.ps1
+```
+
+Não exige `config.json`, Azure CLI, login, Python ou chave OpenAI. Valida o bootstrap e a stack e executa cenários Terraform com provider simulado. O primeiro `init` pode baixar providers públicos; não provisiona recursos Azure. O script interrompe em falha de validação.
+
 ## Executar
 
 Na raiz de `web_scraping`:
@@ -49,7 +59,7 @@ O script faz, em ordem:
 3. Cadastro de segredos por SDK autenticado no Azure CLI, com acesso público limitado ao IP informado; fecha o acesso público em `finally`.
 4. Builds Linux no ACR com tags próprias da execução.
 5. Scraper interno e jobs; execução do seed com os cinco produtos existentes.
-6. Site público HTTPS com `/readyz` validando acesso ao catálogo; imprime a URL final.
+6. Site público HTTPS com `/readyz` validando acesso ao catálogo; somente confirma sucesso após receber explicitamente `status=ready`. Timeout, erro HTTP ou outro status interrompem a validação final.
 
 Terraform provisiona a infraestrutura; o script coordena builds, segredos e carga de dados, etapas que não são resolvidas apenas entregando uma credencial a `terraform apply`. Nenhuma cópia manual de imagens/relatórios é necessária para a primeira publicação.
 

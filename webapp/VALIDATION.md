@@ -1,8 +1,8 @@
-# Validação — 25/09/2026
+# Validação — 27/09/2026
 
 ## Resultado
 
-- Suíte do repositório: **362 testes aprovados**, incluindo **20 testes do WebApp**.
+- Suíte do repositório: **366 testes aprovados**, incluindo **24 testes do WebApp/deploy**.
 - Cobertura de `app` (scraper/agente), com branches: **92,42%**. Esse percentual não é a cobertura do pacote `webapp`.
 - Terraform 1.14.7 e AzureRM 5.6.0: `validate` aprovado para bootstrap e stack principal.
 - **4 cenários Terraform com provider simulado aprovados**: infraestrutura privada, workloads, cron opcional e seed anterior ao site público.
@@ -11,6 +11,10 @@
 - Consulta aos metadados PyPI das cinco dependências diretas do site/deploy não reportou vulnerabilidades nessas versões. Isso não substitui auditoria das dependências transitivas ou da imagem final.
 
 A suíte cobre o cálculo por varejista/data, preservação de preço antigo com aviso, validação de oferta/variante/evidência, busca, cache Azure, resposta HTTP 503 em falha do storage, bloqueio de caminhos arbitrários de imagem e publicação protegida por lease. Um teste de integração simulada confirma que o worker chama `python -m app.research_job`, mantém chaves fora dos argumentos, preserva o histórico e publica relatórios e catálogo.
+
+## Regressões do deploy em 27/09/2026
+
+Quatro testes executam PowerShell com ferramentas externas simuladas: validação sem configuração/login Azure, interrupção quando Terraform falha, sucesso com `status=ready` e recusa de sucesso quando o site permanece em outro status. Nenhuma chamada Azure é feita nesses testes. O engine Docker Linux foi novamente consultado e continua indisponível.
 
 ## Ambiente de testes
 

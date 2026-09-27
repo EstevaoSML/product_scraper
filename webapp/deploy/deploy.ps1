@@ -13,22 +13,24 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Program failed (exit $LASTEXITCODE). Deployment stopped." }
 }
-foreach ($program in @('az', 'terraform', 'python')) { Get-Command $program -ErrorAction Stop | Out-Null }
+Get-Command terraform -ErrorAction Stop | Out-Null
+Invoke-Checked 'terraform' @("-chdir=$tf", 'fmt', '-check', '-recursive')
+if (-not $Apply) {
+    foreach ($directory in @($bootstrap, $tf)) {
+        Invoke-Checked 'terraform' @("-chdir=$directory", 'init', '-backend=false', '-input=false')
+        Invoke-Checked 'terraform' @("-chdir=$directory", 'validate')
+    }
+    Invoke-Checked 'terraform' @("-chdir=$tf", 'test','-test-directory=verification')
+    Write-Host 'Local validation complete. Use -Apply to provision Azure, build images and publish the existing catalog.'
+    return
+}
+foreach ($program in @('az', 'python')) { Get-Command $program -ErrorAction Stop | Out-Null }
 if ($ImageTag -notmatch '^[a-zA-Z0-9_.-]{1,100}$') { throw 'Invalid image tag.' }
 $settings = Get-Content -Raw -LiteralPath $Config | ConvertFrom-Json
 if ($settings.name -notmatch '^[a-z][a-z0-9]{5,15}$') { throw 'Use a globally unique name with 6-16 lowercase letters/digits.' }
 $parsedIp = $null
 if (-not [System.Net.IPAddress]::TryParse($settings.operator_ipv4, [ref]$parsedIp) -or $parsedIp.AddressFamily -ne 'InterNetwork') { throw 'Configure your public IPv4 address.' }
 Invoke-Checked 'az' @('account', 'set', '--subscription', $settings.subscription_id)
-Invoke-Checked 'terraform' @("-chdir=$tf", 'fmt', '-check')
-if (-not $Apply) {
-    Invoke-Checked 'terraform' @("-chdir=$tf", 'init', '-backend=false', '-input=false')
-    Invoke-Checked 'terraform' @("-chdir=$tf", 'validate')
-    Invoke-Checked 'terraform' @("-chdir=$tf", 'test','-test-directory=verification')
-    Write-Host 'Local validation complete. Use -Apply to provision Azure, build images and publish the existing catalog.'
-    return
-}
-
 # This explicit -Apply command is the operator's authorization to create paid resources.
 foreach ($provider in @('Microsoft.App','Microsoft.ContainerRegistry','Microsoft.KeyVault','Microsoft.Storage','Microsoft.Network','Microsoft.OperationalInsights','Microsoft.ManagedIdentity','Microsoft.Insights')) {
     Invoke-Checked 'az' @('provider','register','--namespace',$provider,'--wait','--only-show-errors')
@@ -121,12 +123,14 @@ $vars | ConvertTo-Json | Set-Content -Encoding utf8 $varsFile
 Invoke-Checked 'terraform' @("-chdir=$tf",'apply','-auto-approve','-input=false')
 $url = & terraform "-chdir=$tf" output -raw web_url
 if ($LASTEXITCODE -ne 0) { throw 'Web URL unavailable.' }
+$siteReady = $false
 for ($attempt=0; $attempt -lt 12; $attempt++) {
     try {
         $ready = Invoke-RestMethod "$url/readyz" -TimeoutSec 30
-        if ($ready.status -eq 'ready') { break }
+        if ($ready.status -eq 'ready') { $siteReady = $true; break }
     } catch { if ($attempt -eq 11) { throw } }
     Start-Sleep -Seconds 10
 }
+if (-not $siteReady) { throw 'Website did not report ready. Deployment is not validated.' }
 Write-Host "Deployment complete: $url"
 Write-Host 'Existing 5-product catalog published. Collection job is manual unless collection_cron was configured.'
