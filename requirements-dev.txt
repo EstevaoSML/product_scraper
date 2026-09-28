@@ -4,3 +4,5 @@ pytest==9.1.1
 PyYAML==6.0.3
 pytest-cov==7.1.0
 -r requirements-agent.txt
+-r webapp/requirements.txt
+-r webapp/requirements-deploy.txt

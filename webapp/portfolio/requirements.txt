@@ -1,0 +1,4 @@
+-r ../../requirements-browser.txt
+-r ../../requirements-agent.txt
+-r ../requirements.txt
+azure-keyvault-secrets==4.10.0

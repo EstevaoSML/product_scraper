@@ -1,0 +1,8 @@
+output "resource_group" { value = azurerm_resource_group.portfolio.name }
+output "storage_account" { value = azurerm_storage_account.data.name }
+output "vault_name" { value = azurerm_key_vault.secrets.name }
+output "website_url" { value = azurerm_storage_account.data.primary_web_endpoint }
+output "job_name" { value = var.deploy_job ? azurerm_container_app_job.monthly[0].name : null }
+output "schedule_enabled" { value = var.enable_monthly_schedule }
+output "monthly_model_reservation_usd" { value = 2 }
+output "package_sha256" { value = var.package_sha256 }

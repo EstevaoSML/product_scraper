@@ -23,9 +23,11 @@ logs/
 *.tfstate.*
 *.tfplan
 *.tfvars
+*.tfvars.json
 outputs
 backend.hcl
 crash.log
 !deploy/terraform/verification/*.tftest.hcl
 
 !deploy/azure-devops/verification/*.tftest.hcl
+!webapp/deploy/portfolio/terraform/verification/*.tftest.hcl

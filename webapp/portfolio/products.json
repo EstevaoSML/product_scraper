@@ -1,0 +1,12 @@
+[
+  {"id":"ps5-digital","query":"PlayStation 5 Digital Slim 825GB CFI 2114B","name":"PlayStation 5 Digital Slim","category":"Games"},
+  {"id":"logitech-g502","query":"Mouse Logitech G502 HERO 910-005550","name":"Logitech G502 HERO","category":"Periféricos"},
+  {"id":"hyperx-alloy","query":"Teclado HyperX Alloy Origins Core Switch HyperX Red","name":"HyperX Alloy Origins Core","category":"Periféricos"},
+  {"id":"kingston-nv3","query":"SSD Kingston NV3 1TB SNV3S/1000G","name":"Kingston NV3 1 TB","category":"Armazenamento"},
+  {"id":"hyperx-cloud","query":"Headset HyperX Cloud III Preto 727A8AA","name":"HyperX Cloud III","category":"Áudio"},
+  {"id":"logitech-mx-master","query":"Mouse Logitech MX Master 3S grafite 910-006561","name":"Logitech MX Master 3S","category":"Periféricos"},
+  {"id":"samsung-990-pro","query":"SSD Samsung 990 PRO 1TB MZ-V9P1T0BW sem dissipador","name":"Samsung 990 PRO 1 TB","category":"Armazenamento"},
+  {"id":"jbl-flip-6","query":"Caixa de som JBL Flip 6 preta JBLFLIP6BLK","name":"JBL Flip 6","category":"Áudio"},
+  {"id":"xbox-series-s","query":"Xbox Series S 512GB branco console","name":"Xbox Series S 512 GB","category":"Games"},
+  {"id":"lg-24mp400","query":"Monitor LG 24MP400-B 23.8 IPS Full HD","name":"LG 24MP400-B","category":"Monitores"}
+]

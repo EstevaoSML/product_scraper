@@ -29,7 +29,8 @@ def create_app(repository=None):
     @app.get('/')
     def index():
         items = catalog.list_products()
-        return render_template('index.html', products=items, categories=sorted({p['category'] for p in items}), email=app.config['SUGGESTION_EMAIL'], verified=sum(p['current_cents'] is not None for p in items))
+        retailers = sorted({offer['retailer'] for p in items for offer in p['offers']})
+        return render_template('index.html', products=items, categories=sorted({p['category'] for p in items}), email=app.config['SUGGESTION_EMAIL'], verified=sum(p['current_cents'] is not None for p in items), retailers=retailers)
 
     @app.get('/api/products')
     def products():

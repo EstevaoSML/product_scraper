@@ -8,7 +8,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
-RETAILERS = {'kabum': {'name': 'KaBuM!', 'host': 'www.kabum.com.br'}}
+RETAILERS = {
+    'kabum': {'name': 'KaBuM!', 'host': 'www.kabum.com.br'},
+    'amazon': {'name': 'Amazon Brasil', 'host': 'www.amazon.com.br'},
+    'americanas': {'name': 'Americanas', 'host': 'www.americanas.com.br'},
+    'casasbahia': {'name': 'Casas Bahia', 'host': 'www.casasbahia.com.br'},
+}
 
 
 @contextmanager

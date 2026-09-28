@@ -1,5 +1,7 @@
 # Validação — 27/09/2026
 
+**Atualização — infraestrutura econômica sem ACR:** 392 testes Python e 4 novos planos Terraform simulados aprovados. Consulte [deploy/portfolio/VALIDATION.md](deploy/portfolio/VALIDATION.md) para os resultados e limitações atuais. O relatório abaixo preserva a validação anterior da stack completa.
+
 ## Resultado
 
 - Suíte do repositório: **366 testes aprovados**, incluindo **24 testes do WebApp/deploy**.
