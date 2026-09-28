@@ -186,3 +186,15 @@ az containerapp job execution show -g rg-YOURNAME-portfolio -n job-YOURNAME-mont
 If quota/region capacity prevents the job starting, select a supported region before deploying; do not add dedicated compute. If your subscription disallows budget creation, fix billing permissions instead of assuming an alert exists. For missing prices inspect the private monthly ledger and corresponding reports. To remove **this** demo, back up the data, disable scheduling, then deliberately execute `terraform -chdir=webapp/deploy/portfolio/terraform destroy -var-file=../../../../portfolio-deployment.local.json`. That deletes its stored data and website; it is not part of the deploy script. Key Vault purge protection retains the deleted vault for its retention period.
 
 Suggested commit: `feat: add low-budget Azure portfolio deployment without ACR`.
+
+## Recovering from a missing deployment Python dependency
+
+If package upload failed with `ModuleNotFoundError` after the foundation apply, install the updated requirements in the same deployment environment and rerun Deploy from the repository root:
+
+```powershell
+.\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
+.\.venv-deploy\Scripts\python.exe webapp/deploy/portfolio/operations.py check-dependencies
+.\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
+```
+
+The requirements include `azure-storage-blob`, needed for private package upload. Deploy now checks SDK imports before Terraform or Azure operations. Keep the existing state and configuration; rerunning Deploy reconciles the foundation, uploads the package and then creates the job. The website still requires a successful Smoke run afterward.

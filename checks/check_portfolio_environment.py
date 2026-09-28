@@ -200,10 +200,37 @@ function az {
     if ($args[1] -eq 'show') { return '{"id":"11111111-1111-1111-1111-111111111111","state":"Enabled","environmentName":"AzureCloud"}' }
     if ($args[-1] -ne '11111111-1111-1111-1111-111111111111') { throw 'Wrong subscription' }
 }
-function python { throw 'fixture-stop' }
+function python { if ($args -contains 'check-dependencies') { $global:LASTEXITCODE = 0; return }; throw 'fixture-stop' }
 try { & 'SCRIPT_PATH' -Action Deploy } catch { if ($_.Exception.Message -ne 'fixture-stop') { throw } }
 Write-Output 'checked'
 """.replace('SCRIPT_PATH',str(script).replace("'", "''")))
     assert result.returncode == 0, result.stderr
     assert config.read_bytes() == original
     assert set(json.loads(variables.read_text())) == {'deploy_job','enable_monthly_schedule','package_sha256','budget_start_date'}
+
+
+def check_missing_dependencies_stop_before_terraform_and_azure(tmp_path):
+    script = script_copy(tmp_path)
+    write_config(script)
+    result = powershell("""
+function terraform { throw 'Terraform must not run' }
+function az { throw 'Azure must not run' }
+function python {
+    if ($args -notcontains 'check-dependencies') { throw 'Unexpected Python operation' }
+    $global:LASTEXITCODE = 1
+}
+& 'SCRIPT_PATH' -Action Deploy
+""".replace('SCRIPT_PATH',str(script).replace("'", "''")))
+    assert result.returncode != 0
+    assert 'Command failed: python' in result.stderr
+    assert 'must not run' not in result.stderr
+
+
+def check_operator_dependency_probe_is_local_and_actionable():
+    import sys
+    script = Path(__file__).resolve().parents[1] / 'webapp/deploy/portfolio/operations.py'
+    # -S deliberately excludes installed SDKs; the error must not expose a traceback.
+    result = subprocess.run([sys.executable, '-S', str(script), 'check-dependencies'], capture_output=True, text=True)
+    assert result.returncode == 1
+    assert 'requirements-deploy.txt' in result.stdout
+    assert 'Traceback' not in result.stderr

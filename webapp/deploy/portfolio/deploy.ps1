@@ -115,6 +115,8 @@ if ($Action -ne 'Validate') {
         Write-Host 'Configuration file passed validation. No Azure calls or file changes made.'
         return
     }
+    # Fail locally before packaging or any Terraform/Azure work.
+    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-dependencies')
     # Remove legacy input copies; the explicit JSON -var-file is authoritative.
     if (Test-Path -LiteralPath $varsFile) {
         $previous = [IO.File]::ReadAllText($varsFile) | ConvertFrom-Json

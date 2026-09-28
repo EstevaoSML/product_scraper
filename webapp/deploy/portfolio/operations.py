@@ -39,6 +39,11 @@ def main(args):
     from azure.keyvault.secrets import SecretClient
     from azure.storage.blob import BlobServiceClient
     from azure.core.exceptions import HttpResponseError, ResourceExistsError
+    if args.action == 'check-dependencies':
+        print('Deployment Python dependencies available.')
+        return
+    if args.outputs is None:
+        raise ValueError('--outputs is required for cloud operations')
     values = json.loads(args.outputs.read_text(encoding='utf-8-sig'))
     get = lambda key: values[key]['value']
     with AzureCliCredential() as credential:
@@ -112,13 +117,16 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['upload', 'start', 'set-secret', 'check-ready'])
-    parser.add_argument('--outputs', type=Path, required=True)
+    parser.add_argument('action', choices=['upload', 'start', 'set-secret', 'check-ready', 'check-dependencies'])
+    parser.add_argument('--outputs', type=Path)
     parser.add_argument('--package', type=Path)
     parser.add_argument('--mode', choices=['smoke', 'publish', 'collect'], default='smoke')
     parser.add_argument('--limit', type=int, default=40)
     try:
         main(parser.parse_args())
+    except ModuleNotFoundError:
+        print('Deployment Python dependency missing. Using the same Python selected with -Python, run: python -m pip install -r webapp/requirements-deploy.txt')
+        raise SystemExit(1) from None
     except Exception as exc:
         # Azure SDK exception bodies can contain request details; never print them.
         print('Portfolio operation failed (' + type(exc).__name__ + '). Check execution status, RBAC and prerequisites.')

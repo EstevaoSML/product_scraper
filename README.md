@@ -132,3 +132,15 @@ After a code update, run Deploy and Smoke again before re-enabling the monthly s
 - [MCP setup](docs/MCP.md) and [agent navigation](docs/AGENT-NAVIGATION.md)
 - [CI and regression checks](docs/CI.md)
 - [Legacy infrastructure, local Docker scraper and API guide](REDME.legacy.md)
+
+## Recovering from a missing deployment Python dependency
+
+If package upload failed with `ModuleNotFoundError` after the foundation apply, install the updated requirements in the same deployment environment and rerun Deploy from the repository root:
+
+```powershell
+.\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
+.\.venv-deploy\Scripts\python.exe webapp/deploy/portfolio/operations.py check-dependencies
+.\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
+```
+
+The requirements include `azure-storage-blob`, needed for private package upload. Deploy now checks SDK imports before Terraform or Azure operations. Keep the existing state and configuration; rerunning Deploy reconciles the foundation, uploads the package and then creates the job. The website still requires a successful Smoke run afterward.
