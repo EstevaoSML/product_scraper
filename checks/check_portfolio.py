@@ -288,3 +288,15 @@ def check_portfolio_has_no_fixed_cost_infrastructure():
                  'azurerm_log_analytics_workspace', 'azurerm_nat_gateway', 'azurerm_service_plan'}
     assert not forbidden.intersection(resources)
     assert resources.count('azurerm_container_app_job') == 1
+
+
+def check_new_subscription_registers_required_azure_services():
+    import re
+    text = (Path(__file__).resolve().parents[1] / 'webapp/deploy/portfolio/terraform/main.tf').read_text()
+    provider = text.split('provider "azurerm" {', 1)[1].split('data "azurerm_client_config"', 1)[0]
+    registration = re.search(r'resource_providers_to_register\s*=\s*\[([^\]]+)\]', provider)
+    assert registration, 'Fresh subscriptions require explicit resource-provider registration'
+    services = set(re.findall(r'"(Microsoft\.[^"]+)"', registration.group(1)))
+    assert {'Microsoft.App', 'Microsoft.Storage', 'Microsoft.KeyVault',
+            'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.OperationalInsights'} <= services
+    assert 'Microsoft.ContainerRegistry' not in services

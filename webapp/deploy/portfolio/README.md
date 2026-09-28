@@ -43,7 +43,7 @@ Sources, checked 2026-09-27: [Container Apps billing](https://learn.microsoft.co
 
 ## First deployment and no-model test
 
-Use PowerShell in the repository root. Prerequisites: Python 3.12+, Terraform 1.10+, Azure CLI with Container Apps commands, and an **active Azure subscription**. Logging in with `--allow-no-subscription` alone is insufficient for deployment. The operator needs resource creation and role-assignment rights (for example Owner on the chosen subscription/scope), and permissions to create cost budgets. Microsoft.App, Microsoft.Storage, Microsoft.KeyVault, Microsoft.ManagedIdentity and Microsoft.Consumption must be registered; the AzureRM provider can register required providers if your account permits it.
+Use PowerShell in the repository root. Prerequisites: Python 3.12+, Terraform 1.10+, Azure CLI with Container Apps commands, and an **active Azure subscription**. Logging in with `--allow-no-subscription` alone is insufficient for deployment. The operator needs resource creation and role-assignment rights (for example Owner on the chosen subscription/scope), and permissions to create cost budgets. Terraform explicitly registers Microsoft.App, Microsoft.Storage, Microsoft.KeyVault, Microsoft.ManagedIdentity, Microsoft.Consumption and Microsoft.OperationalInsights during provider initialization. The operator needs subscription-level `/register/action` permissions (included in Owner/Contributor). Registration may take several minutes; no Log Analytics workspace is created merely by registering its namespace.
 
 ```powershell
 cd 'C:\Users\estev\OneDrive\Área de Trabalho\work\web_scraping'
@@ -122,6 +122,9 @@ Availability and product identity remain conservative: prices require matching s
 - No Azure resources or paid research calls were created as part of implementing these files. See `VALIDATION.md` for checks and the outstanding real Azure smoke test.
 
 ## Troubleshooting and cleanup
+
+For `MissingSubscriptionRegistration`, the current configuration explicitly registers the required namespaces instead of relying on the AzureRM default set. Rerun the updated Deploy command with the **same state and settings**; it creates a fresh plan and resumes resources not yet created. Do not apply the old saved plan, delete state, or clear the identity marker after a partial deployment. If registration is denied, a subscription administrator must grant the registration permission or register the namespaces first. See [Azure resource-provider registration](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types).
+
 
 For `SubscriptionNotFound` during resource-group creation, a saved Terraform plan is not proof that Azure can access the subscription. The script now checks the selected account's enabled state/cloud, rejects competing Terraform authentication overrides without printing their values, and performs a read-only subscription request to Azure Resource Manager before packaging or applying. A successful `az account set` alone can reflect a cached account entry.
 

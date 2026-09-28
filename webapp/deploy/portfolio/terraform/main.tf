@@ -13,6 +13,17 @@ provider "azurerm" {
   features {}
   subscription_id     = var.subscription_id
   storage_use_azuread = true
+  # Explicit registration supports new subscriptions without depending on the
+  # provider version's default registration set. AzureRM waits during configure.
+  resource_provider_registrations = "none"
+  resource_providers_to_register = [
+    "Microsoft.App",
+    "Microsoft.Consumption",
+    "Microsoft.KeyVault",
+    "Microsoft.ManagedIdentity",
+    "Microsoft.OperationalInsights",
+    "Microsoft.Storage",
+  ]
 }
 data "azurerm_client_config" "operator" {}
 
