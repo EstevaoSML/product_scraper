@@ -1,4 +1,6 @@
 """One Azure job, one browser, at most 40 model attempts / USD 2 reserved per UTC month."""
+from webapp.portfolio import bootstrap as job_diagnostics
+from webapp.portfolio.bootstrap import diagnostic
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
@@ -210,6 +212,7 @@ def collect(container, blob, lease, lost, state, credential, limit):
 
 
 def main():
+    diagnostic('worker_import')
     from azure.identity import ManagedIdentityCredential
     from azure.storage.blob import BlobServiceClient
     action = os.environ.get('RUN_MODE', 'smoke')
@@ -220,6 +223,7 @@ def main():
     credential = ManagedIdentityCredential(client_id=os.environ['AZURE_CLIENT_ID'])
     service = BlobServiceClient('https://' + os.environ['CATALOG_STORAGE_ACCOUNT'] + '.blob.core.windows.net',
                                credential, connection_timeout=5, read_timeout=10, retry_total=1)
+    diagnostic('catalog_open')
     with credential, service:
         container = service.get_container_client('catalog')
         with writer(container) as (blob, lease, lost):
@@ -230,15 +234,19 @@ def main():
                 state = seed_state(container)
                 publish(container, blob, lease, lost, state)
             if action == 'smoke':
+                diagnostic('browser_smoke')
                 browser_smoke()
             elif action == 'collect':
+                diagnostic('collection')
                 state = collect(container, blob, lease, lost, state, credential, limit)
+            diagnostic('site_publish')
             publish_site(service.get_container_client('$web'), state, container, lease, lost,
                          os.environ.get('SUGGESTION_EMAIL', ''))
             if action == 'smoke':
                 container.upload_blob('executions/smoke.json', json.dumps({
                     'package_sha256': os.environ['PACKAGE_SHA256'], 'status': 'passed',
                     'at': datetime.now(timezone.utc).isoformat()}), overwrite=True)
+            diagnostic('complete')
             print('portfolio_published; action=' + action, flush=True)
 
 
@@ -248,6 +256,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, cancelled)
     try:
         main()
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as exc:
+        diagnostic(job_diagnostics.CURRENT_STAGE, exc)
         print('portfolio_job_failed; inspect execution status and private ledger', file=sys.stderr)
         sys.exit(1)

@@ -43,3 +43,7 @@ Full suite: **415 passed**, **92.43% app branch coverage**, one pre-existing dep
 ## Deployment upload dependency fix
 
 Added the missing azure-storage-blob==12.30.2 operator dependency and an import-only check before Terraform/Azure operations. Installed the updated requirements in the existing .venv-deploy; the dependency probe and pip check passed. Full suite: 417 passed, 92.43% app branch coverage, one existing warning. New regression checks verify missing SDKs stop before Terraform and report an installation command without traceback. Container integration was attempted but blocked because Docker Desktop Linux engine was unavailable. No Azure apply or upload was run for this fix.
+
+## Private durable diagnostics
+
+Added best-effort stage/status records to catalog/executions/diagnostics with per-run IDs and 30-day lifecycle expiry. The existing MI authenticates each bounded write; exception messages, subprocess output and secrets are excluded. 424 Python checks passed with 92.43% app coverage; Terraform validate and all five mocked plans passed. Tests cover redaction, path injection, unavailable storage and retention. Mock test rollout defaults now explicitly override local generated deployment controls. Docker integration was attempted and blocked by the unavailable Linux engine. No Azure apply or new Smoke run was executed; the prior failure cause remains unknown. Platform failures before Python/identity/storage readiness cannot be persisted by this mechanism.

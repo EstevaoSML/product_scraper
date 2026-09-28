@@ -92,6 +92,17 @@ resource "azurerm_storage_management_policy" "retention" {
       base_blob { delete_after_days_since_modification_greater_than = 30 }
     }
   }
+  rule {
+    name    = "expire-job-diagnostics"
+    enabled = true
+    filters {
+      prefix_match = ["catalog/executions/diagnostics/"]
+      blob_types   = ["blockBlob"]
+    }
+    actions {
+      base_blob { delete_after_days_since_modification_greater_than = 30 }
+    }
+  }
   # latest.json (all price history), ledgers, package and public assets are kept.
 }
 resource "azurerm_user_assigned_identity" "job" {

@@ -300,3 +300,58 @@ def check_new_subscription_registers_required_azure_services():
     assert {'Microsoft.App', 'Microsoft.Storage', 'Microsoft.KeyVault',
             'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.OperationalInsights'} <= services
     assert 'Microsoft.ContainerRegistry' not in services
+
+
+@pytest.mark.parametrize('status', ['Failed', 'Stopped', 'Degraded'])
+def check_operator_reports_terminal_failure_status(status):
+    from webapp.deploy.portfolio.operations import terminal_status, OperatorError
+    with pytest.raises(OperatorError, match='Azure execution status: ' + status):
+        terminal_status(status)
+
+
+def check_operator_distinguishes_monitor_failure_without_leaking_cli_output(monkeypatch):
+    from webapp.deploy.portfolio import operations
+    monkeypatch.setattr(operations.shutil, 'which', lambda _: 'az')
+    monkeypatch.setattr(operations.subprocess, 'run', lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout='secret-canary', stderr='credential-canary'))
+    with pytest.raises(operations.OperatorError, match='job may still be running') as caught:
+        operations.cli('containerapp', 'job', 'execution', 'show', '-n', 'fixture')
+    assert 'canary' not in str(caught.value)
+    assert operations.terminal_status('Running') is False
+    assert operations.terminal_status('Succeeded') is True
+
+
+def check_private_diagnostic_record_is_bounded_and_redacted(monkeypatch, capsys):
+    import subprocess
+    monkeypatch.setenv('PORTFOLIO_DIAGNOSTIC_ID', 'a' * 32)
+    opener = Mock()
+    opener.open.return_value = io.BytesIO(b'')
+    monkeypatch.setattr(bootstrap, 'storage_access', lambda timeout: (opener, 'fixture123', 'b'*64, 'token-canary'))
+    error = subprocess.CalledProcessError(1, ['secret-command-canary'], output='secret-output-canary', stderr='secret-error-canary')
+    bootstrap.diagnostic('dependency_install', error)
+    request = opener.open.call_args.args[0]
+    record = json.loads(request.data)
+    assert record['stage'] == 'dependency_install' and record['status'] == 'failed'
+    assert record['returncode'] == 1
+    assert request.get_method() == 'PUT'
+    assert request.full_url == 'https://fixture123.blob.core.windows.net/catalog/executions/diagnostics/' + 'a'*32 + '.json'
+    assert 'canary' not in request.data.decode() + capsys.readouterr().out
+    assert len(request.data) < 1024
+    assert opener.open.call_args.kwargs['timeout'] == 5
+
+
+def check_diagnostics_failure_never_masks_original_error(monkeypatch, capsys):
+    monkeypatch.setattr(bootstrap, 'storage_access', Mock(side_effect=RuntimeError('secret-canary')))
+    bootstrap.diagnostic('package_download', ValueError('secret-canary'))
+    output = capsys.readouterr().out
+    assert 'diagnostic_storage_unavailable' in output and 'secret-canary' not in output
+
+
+def check_diagnostics_reject_path_injection_before_network(monkeypatch):
+    monkeypatch.setenv('PORTFOLIO_DIAGNOSTIC_ID', '../escape')
+    access = Mock()
+    monkeypatch.setattr(bootstrap, 'storage_access', access)
+    bootstrap.diagnostic('worker_start')
+    access.assert_not_called()
+    with pytest.raises(ValueError):
+        bootstrap.diagnostic('untrusted-secret-canary')

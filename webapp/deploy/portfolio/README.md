@@ -198,3 +198,28 @@ If package upload failed with `ModuleNotFoundError` after the foundation apply, 
 ```
 
 The requirements include `azure-storage-blob`, needed for private package upload. Deploy now checks SDK imports before Terraform or Azure operations. Keep the existing state and configuration; rerunning Deploy reconciles the foundation, uploads the package and then creates the job. The website still requires a successful Smoke run afterward.
+
+## Smoke execution or status-query failure
+
+After `Azure execution started`, a generic `RuntimeError` from older operator code could mean either a terminal job failure or failure of the local Azure CLI status query. The current script distinguishes these cases. Inspect the existing execution before starting another Smoke run:
+
+```powershell
+az containerapp job execution show -g rg-YOURNAME-portfolio -n job-YOURNAME-monthly --job-execution-name EXECUTION_NAME --query "{name:name,status:properties.status,start:properties.startTime,end:properties.endTime}" -o json
+```
+
+Use the execution name printed by the script. In Azure Portal, open the Container Apps Job, select Execution history, then that execution and inspect its container/system logs if available. `Running` means the local monitor failure does not establish a job failure. `Failed`, `Stopped` or `Degraded` requires execution diagnostics; do not infer that RBAC or Terraform is the cause from the generic message alone. A completed container's console logs may be unavailable in this low-budget stack without a configured log sink.
+
+## Persistent job diagnostics without Log Analytics
+
+A failed execution with no replicas has no remaining replica logs to fetch. The updated job writes a small private JSON record to `catalog/executions/diagnostics/<run-id>.json` using its existing managed identity. The operator prints this blob path before starting the execution. Each stage updates the same record; it contains the last stage, status, UTC timestamp, package hash and sanitized exception type/numeric codes. It excludes exception messages, command output, keys, tokens and page content. Terraform expires these records after 30 days.
+
+Deploy the change and run a no-model Smoke test:
+
+```powershell
+.\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
+.\webapp\deploy\portfolio\deploy.ps1 -Action Smoke -Python .\.venv-deploy\Scripts\python.exe
+```
+
+If Smoke fails, open your Storage account in Azure Portal > Storage browser > Blob containers > catalog > executions > diagnostics, then open the JSON matching the run ID printed by the command. Share that JSON for diagnosis. A record left as `running` identifies the last completed diagnostic write, not proof that the job is still running.
+
+This uses the existing private Storage account and RBAC; no Log Analytics, ACR or additional service is created. Storage writes/retained bytes incur normal usage charges. These records start with the next updated run and cannot recover the old execution's logs. They are best effort: failures before Python starts, missing managed identity, unavailable Storage or abrupt process termination can prevent a failure record. Worker import failures can leave `worker_start` as the last stage. This is application diagnostics, not persistent Azure platform/system logs. Portal Console/System links still require a Log Analytics workspace.

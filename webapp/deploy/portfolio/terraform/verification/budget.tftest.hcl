@@ -7,6 +7,9 @@ mock_provider "azurerm" {
   }
 }
 variables {
+  deploy_job = false
+  enable_monthly_schedule = false
+  package_sha256 = ""
   subscription_id   = "11111111-1111-1111-1111-111111111111"
   name              = "pricefixture01"
   alert_email       = "operator@example.com"
@@ -14,6 +17,10 @@ variables {
 }
 run "foundation" {
   command = plan
+  assert {
+    condition = one([for rule in azurerm_storage_management_policy.retention.rule : rule.actions[0].base_blob[0].delete_after_days_since_modification_greater_than if rule.name == "expire-job-diagnostics"]) == 30
+    error_message = "Private job diagnostics must expire after 30 days."
+  }
   assert {
     condition     = azurerm_container_app_environment.jobs.location == var.location && azurerm_container_app_environment.jobs.name == "cae-${var.name}"
     error_message = "Existing deployment location and name must remain unchanged without an override."

@@ -8,15 +8,28 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
+
+
+class OperatorError(RuntimeError):
+    """Only fixed, application-owned diagnostic messages may use this type."""
+
+
+def terminal_status(status):
+    if status in ('Failed', 'Stopped', 'Degraded'):
+        raise OperatorError('Azure execution status: ' + status + '. Check the private catalog diagnostic blob printed when execution started.')
+    return status == 'Succeeded'
 
 
 def cli(*args):
     command = shutil.which('az')
     if not command:
-        raise RuntimeError('Install Azure CLI')
+        raise OperatorError('Azure CLI is unavailable. Install it and verify az login.')
     result = subprocess.run([command, *args, '--only-show-errors', '-o', 'json'], capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError('Azure CLI operation failed; check login, subscription and permissions')
+        if args[:4] == ('containerapp', 'job', 'execution', 'show'):
+            raise OperatorError('Could not read Azure execution status. The job may still be running; inspect the existing execution before starting another. Check Azure CLI login, permissions and connectivity.') from None
+        raise OperatorError('Azure CLI request failed before execution monitoring. Check Azure CLI login, permissions and connectivity.') from None
     return json.loads(result.stdout or '{}')
 
 
@@ -91,6 +104,11 @@ def main(args):
         if args.action == 'start':
             job = cli('containerapp', 'job', 'show', '-g', get('resource_group'), '-n', get('job_name'))
             template = start_template(job, args.mode, args.limit)
+            run_id = uuid.uuid4().hex
+            env = template['containers'][0]['env']
+            env[:] = [entry for entry in env if entry['name'] != 'PORTFOLIO_DIAGNOSTIC_ID']
+            env.append(dict(name='PORTFOLIO_DIAGNOSTIC_ID', value=run_id))
+            print('Private diagnostic blob: catalog/executions/diagnostics/' + run_id + '.json', flush=True)
             with tempfile.TemporaryDirectory(prefix='portfolio-start-') as scratch:
                 path = Path(scratch) / 'execution.json'
                 # JSON is valid YAML. Preserve the full template (image, resource,
@@ -105,14 +123,12 @@ def main(args):
                 execution = cli('containerapp', 'job', 'execution', 'show', '-g', get('resource_group'),
                                 '-n', get('job_name'), '--job-execution-name', name)
                 status = execution.get('properties', execution).get('status')
-                if status == 'Succeeded':
+                if terminal_status(status):
                     print('Execution succeeded. Website: ' + get('website_url'))
                     return
-                if status in ('Failed', 'Stopped', 'Degraded'):
-                    raise RuntimeError('Azure execution failed: ' + str(status))
                 print('Execution status: ' + str(status), flush=True)
                 time.sleep(20)
-            raise TimeoutError('Execution wait expired; inspect the Azure job before starting another run')
+            raise OperatorError('Execution wait expired; inspect the existing Azure execution before starting another run.')
 
 
 if __name__ == '__main__':
@@ -124,6 +140,9 @@ if __name__ == '__main__':
     parser.add_argument('--limit', type=int, default=40)
     try:
         main(parser.parse_args())
+    except OperatorError as exc:
+        print(str(exc))
+        raise SystemExit(1) from None
     except ModuleNotFoundError:
         print('Deployment Python dependency missing. Using the same Python selected with -Python, run: python -m pip install -r webapp/requirements-deploy.txt')
         raise SystemExit(1) from None
