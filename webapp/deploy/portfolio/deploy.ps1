@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Validate','Deploy','Smoke','Publish','CollectOne','CollectMonthly','SetSecret','EnableSchedule','DisableSchedule')]
+    [ValidateSet('Validate','CheckSettings','Deploy','Smoke','Publish','CollectOne','CollectMonthly','SetSecret','EnableSchedule','DisableSchedule')]
     [string]$Action = 'Validate',
     [string]$Terraform = 'terraform',
     [string]$Python = 'python'
@@ -58,6 +58,47 @@ function Repair-VariablesEncoding {
         }
     }
 }
+function Confirm-DeploymentIdentity($Settings, [string]$Identity) {
+    # Only trust the default local state here. A migrated backend/workspace must
+    # not be rebound using a leftover local state file.
+    $workspaceFile = Join-Path $infra '.terraform/environment'
+    $backendFile = Join-Path $infra '.terraform/terraform.tfstate'
+    $stateFile = Join-Path $infra 'terraform.tfstate'
+    $localDefault = !(Test-Path -LiteralPath $workspaceFile) -or (Get-Content -LiteralPath $workspaceFile -Raw).Trim() -eq 'default'
+    if (Test-Path -LiteralPath $backendFile) {
+        $backend = [IO.File]::ReadAllText($backendFile) | ConvertFrom-Json
+        if ($backend.backend.type) { $localDefault = $false }
+    }
+    if ($localDefault -and (Test-Path -LiteralPath $stateFile)) {
+        $state = [IO.File]::ReadAllText($stateFile) | ConvertFrom-Json
+        if ($state.version -ne 4) { throw 'Unrecognized Terraform state format; identity cannot be verified safely.' }
+        $managed = @($state.resources | Where-Object { $_.mode -eq 'managed' -and @($_.instances).Count -gt 0 })
+        if ($managed.Count) {
+            $groups = @($managed | Where-Object { $_.type -eq 'azurerm_resource_group' -and $_.name -eq 'portfolio' })
+            if ($groups.Count -ne 1 -or @($groups[0].instances).Count -ne 1) {
+                throw 'Existing resources found but project identity is ambiguous. Preserve state and inspect the deployment.'
+            }
+            $group = $groups[0].instances[0].attributes
+            if ($group.id -notmatch '^/subscriptions/([0-9a-fA-F-]{36})/resourceGroups/([^/]+)$') {
+                throw 'Cannot verify resource-group identity from Terraform state.'
+            }
+            $recordedSubscription = $Matches[1]
+            $recordedGroup = $Matches[2]
+            if ($Settings.subscription_id -ne $recordedSubscription) {
+                throw 'PRECO_SUBSCRIPTION_ID differs from the subscription in Terraform state. Restore the original subscription ID; do not clear the identity marker or state.'
+            }
+            if ($recordedGroup -ne ('rg-' + $Settings.name + '-portfolio')) {
+                throw 'PRECO_NAME differs from the project in Terraform state. Keep the original project name; use PRECO_COMPUTE_LOCATION alone to change compute region.'
+            }
+            # Matching managed state is authoritative even if the local marker
+            # is stale. The marker is refreshed only after Azure preflight passes.
+            return
+        }
+    }
+    if ((Test-Path -LiteralPath $identityFile) -and (Get-Content -LiteralPath $identityFile -Raw).Trim() -ne $Identity) {
+        throw 'These environment settings target another deployment: PRECO_SUBSCRIPTION_ID or PRECO_NAME changed. State could not confirm a safe rebind; preserve the marker and state.'
+    }
+}
 function Save-Variables($Values) {
     # Persist only rollout controls, never operator-provided settings.
     $controls = @{}
@@ -90,16 +131,17 @@ try {
             alert_email = $env:PRECO_ALERT_EMAIL
             suggestion_email = $(if ($env:PRECO_SUGGESTION_EMAIL) { $env:PRECO_SUGGESTION_EMAIL } else { '' })
         }
+        foreach ($key in @($settings.Keys)) { $settings[$key] = ([string]$settings[$key]).Trim() }
         if ($settings.subscription_id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
             throw 'Set $env:PRECO_SUBSCRIPTION_ID to your real Azure subscription UUID (no placeholder).'
         }
         if ($settings.name -notmatch '^[a-z][a-z0-9]{5,15}$' -or $settings.name -cmatch '[A-Z]') {
             throw 'Set $env:PRECO_NAME to a unique 6-16 character lowercase name, starting with a letter.'
         }
-        if ($settings.alert_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+        if ($Action -ne 'CheckSettings' -and $settings.alert_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
             throw 'Set $env:PRECO_ALERT_EMAIL to the address that should receive Azure cost alerts.'
         }
-        if ($settings.suggestion_email -and $settings.suggestion_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+        if ($Action -ne 'CheckSettings' -and $settings.suggestion_email -and $settings.suggestion_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
             throw 'PRECO_SUGGESTION_EMAIL must be empty or a valid email address.'
         }
         # TF_VAR_* values are inherited by Terraform only for this script run.
@@ -113,8 +155,10 @@ try {
             $bytes = [Text.Encoding]::UTF8.GetBytes($settings.subscription_id.ToLowerInvariant() + '/' + $settings.name)
             $identity = ([BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
         } finally { $hasher.Dispose() }
-        if ((Test-Path -LiteralPath $identityFile) -and (Get-Content -LiteralPath $identityFile -Raw).Trim() -ne $identity) {
-            throw 'These environment settings target another deployment. Use a separate Terraform directory/state.'
+        Confirm-DeploymentIdentity $settings $identity
+        if ($Action -eq 'CheckSettings') {
+            Write-Host 'Subscription and project settings passed the local identity check. No Azure calls or file changes made.'
+            return
         }
         # Migrate the old generated file without letting its higher-precedence
         # values silently override the new environment settings.

@@ -2,13 +2,15 @@
 
 ## Completed locally
 
+- Identity guard update: 411 Python checks passed. Seven cases cover matching managed state, stale markers, whitespace, different subscription/name, ambiguous resources and remote-backend isolation. CheckSettings also passed against the actual local state using its recorded identity; state contents were unchanged and no Azure calls were made. The current marker matches the existing managed resource group, so it was preserved.
+
 - 2026-09-28 capacity workaround: added PRECO_COMPUTE_LOCATION for only the Container Apps environment/job. All 404 Python checks and five Terraform mock plans passed. The alternate-region plan checks both compute resources move while Storage, Key Vault, identity and resource-group locations remain unchanged; the default preserves existing names/locations. No Azure apply or alternate-region capacity test was performed. Reuse the chosen override in later sessions.
 
 - 2026-09-28: explicit registration added for the six Azure namespaces required by the portfolio setup. Terraform validate and all four mock plans passed; a regression check prevents relying solely on default registration. No live registration, plan or apply was run for this fix. The user reported a partial real deployment; preserve its state when resuming.
 
 - Subscription preflight: four mocked cases cover an accessible subscription, stale CLI cache with ARM rejection, a disabled subscription, and competing Terraform credentials. No Azure writes or deployment retries were performed. This check improves diagnosis; it does not establish why the user's live subscription returned 404.
 
-- Full repository suite after the environment-variable and encoding fixes: **404 passed**, including **38 portfolio checks**. Command: `python -m pytest -q --cov=app --cov-branch --cov-fail-under=80`. Coverage of the existing `app` package, with branches: **92.43%**; this is not the coverage percentage for `webapp.portfolio`.
+- Full repository suite after the environment-variable and encoding fixes: **411 passed**, including **45 portfolio checks**. Command: `python -m pytest -q --cov=app --cov-branch --cov-fail-under=80`. Coverage of the existing `app` package, with branches: **92.43%**; this is not the coverage percentage for `webapp.portfolio`.
 - Regression checks executed in both Windows PowerShell 5.1 and PowerShell 7 verify BOM-free UTF-8 for generated variables/outputs, Unicode preservation, and automatic repair of an existing BOM before Terraform starts. The affected local variables file was repaired without changing its JSON values; Terraform validate passed. No Azure plan/apply was run for this fix.
 - Five additional PowerShell cases verify missing/placeholder/invalid subscription rejection before external tools, environment forwarding and restoration after failure, sanitization of legacy generated settings, and rejection of a different deployment identity. All Azure/Terraform mutations are mocked; this update did not deploy resources.
 - The Windows sandbox run used a test-process-only temporary-directory ACL workaround restricted to that run's scratch directory. Production code was not changed to relax filesystem permissions for tests. One existing Starlette/AnyIO deprecation warning remains.

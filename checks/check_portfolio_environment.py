@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import base64
 import subprocess
+import hashlib
 import pytest
 from checks.check_web_deploy import powershell
 
@@ -152,3 +153,39 @@ Write-Output 'confirmed'
     assert (result.returncode == 0) == (scenario == 'healthy'), result.stderr
     assert expected in result.stdout + result.stderr
     assert 'fixture-credential-canary' not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('scenario,success,message', [
+    ('matching', True, 'passed'), ('stale_marker', True, 'passed'),
+    ('spaces', True, 'passed'), ('subscription', False, 'PRECO_SUBSCRIPTION_ID differs'),
+    ('name', False, 'PRECO_NAME differs'), ('ambiguous', False, 'identity is ambiguous'),
+    ('remote', False, 'safe rebind')])
+def check_identity_uses_managed_state_without_mutating_it(tmp_path, scenario, success, message):
+    script = script_copy(tmp_path)
+    infra = script.parent / 'terraform'
+    subscription = '11111111-1111-1111-1111-111111111111'
+    recorded = '22222222-2222-2222-2222-222222222222' if scenario == 'subscription' else subscription
+    group_name = 'rg-another01-portfolio' if scenario == 'name' else 'rg-fixture01-portfolio'
+    state = {'version': 4, 'resources': [{'mode':'managed', 'type':'azurerm_resource_group',
+        'name':'portfolio', 'instances':[{'attributes': {'id':f'/subscriptions/{recorded}/resourceGroups/{group_name}', 'name':group_name}}]}]}
+    if scenario == 'ambiguous':
+        state['resources'][0]['type'] = 'azurerm_storage_account'
+    state_file = infra / 'terraform.tfstate'
+    state_file.write_text(json.dumps(state))
+    # Even a matching marker cannot override a different actual managed state.
+    marker = infra / '.deployment-identity'
+    digest = hashlib.sha256((subscription + '/fixture01').encode()).hexdigest()
+    marker.write_text('0' * 64 if scenario in ('stale_marker','remote') else digest)
+    if scenario == 'remote':
+        (infra / '.terraform').mkdir()
+        (infra / '.terraform/terraform.tfstate').write_text('{"backend":{"type":"azurerm"}}')
+    before = state_file.read_bytes(), marker.read_bytes()
+    extra = "$env:PRECO_SUBSCRIPTION_ID = ' 11111111-1111-1111-1111-111111111111 '; $env:PRECO_NAME = ' fixture01 '" if scenario == 'spaces' else ''
+    result = powershell(SETTINGS + extra + """
+function terraform { throw 'Terraform forbidden in settings check' }
+function az { throw 'Azure forbidden in settings check' }
+function python { throw 'Packaging forbidden in settings check' }
+& '""" + str(script).replace("'", "''") + "' -Action CheckSettings\n")
+    assert (result.returncode == 0) == success, result.stderr
+    assert message in result.stdout + result.stderr
+    assert (state_file.read_bytes(), marker.read_bytes()) == before

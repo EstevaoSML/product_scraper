@@ -67,7 +67,7 @@ $env:PRECO_SUGGESTION_EMAIL = Read-Host 'Public suggestion email (Enter to leave
 
 The first three variables are required for every cloud action. Location, compute location and suggestion email are optional. Subscription IDs must be real UUIDs; placeholders are rejected before Azure CLI is called. Use the same subscription and resource name on subsequent runs. Re-enter these variables after opening a new PowerShell window. Suggestion email, when configured, is intentionally visible on the public website.
 
-The script forwards these settings to Terraform using temporary `TF_VAR_*` environment variables and restores any previous values when it exits, including on failure. Only rollout controls (job enabled, schedule enabled, package hash and budget start date) are written to the git-ignored generated `.auto.tfvars.json`. A hash of the subscription/name is saved in the git-ignored `terraform/.deployment-identity` beside the state to guard against accidentally targeting another deployment. Existing generated settings files are sanitized on the next cloud action after checking the subscription/name match. The old `config.local.json` is no longer read; you can remove your own copy if it is no longer needed.
+The script forwards these settings to Terraform using temporary `TF_VAR_*` environment variables and restores any previous values when it exits, including on failure. Only rollout controls (job enabled, schedule enabled, package hash and budget start date) are written to the git-ignored generated `.auto.tfvars.json`. A hash of the subscription/name is saved in the git-ignored `terraform/.deployment-identity` beside the state. When default local Terraform state contains managed resources, the recorded resource group is authoritative: mismatched subscription/name settings are rejected even if the marker matches, and a stale marker can be refreshed after settings match the managed state and Azure preflight succeeds. Nondefault workspaces or migrated backends are not rebound from a leftover local state file. Existing generated settings files are sanitized on the next cloud action after checking the subscription/name match. The old `config.local.json` is no longer read; you can remove your own copy if it is no longer needed.
 
 **Terraform plans, outputs and state still contain resource identifiers and configured email addresses.** Environment variables do not remove those values from Terraform's state. These artifacts are git-ignored and must not be force-added to Git. The OpenAI API key remains exclusively in Key Vault, provisioned with the existing hidden prompt.
 
@@ -123,6 +123,16 @@ Availability and product identity remain conservative: prices require matching s
 - No Azure resources or paid research calls were created as part of implementing these files. See `VALIDATION.md` for checks and the outstanding real Azure smoke test.
 
 ## Troubleshooting and cleanup
+
+For an identity mismatch, changing **only** `PRECO_COMPUTE_LOCATION` cannot cause it: the identity consists of subscription ID and project name. Keep `PRECO_NAME` unchanged when selecting another compute region. The script trims accidental leading/trailing whitespace and now identifies which input disagrees with the resource group recorded in default local Terraform state.
+
+```powershell
+# Read-only, no Azure/Terraform commands, package build or file writes:
+.\webapp\deploy\portfolio\deploy.ps1 -Action CheckSettings
+```
+
+Use this check after setting environment variables in each new terminal. If it reports `PRECO_NAME differs`, restore the original project name; if it reports `PRECO_SUBSCRIPTION_ID differs`, restore the original real subscription ID. If both match managed state, a stale hash marker no longer blocks deployment; the normal Deploy action refreshes it only after Azure preflight succeeds. CheckSettings itself never rewrites the marker or state. A missing/ambiguous state or a migrated backend remains protected by the marker. **Do not delete the marker or state to bypass a mismatch when resources exist.** The state is still local and git-ignored; no subscription or email is added to tracked code.
+
 
 For `ManagedEnvironmentCapacityHeavyUsageError` / `AKSCapacityHeavyUsage`, Azure lacks capacity for a new managed environment in that region. The reference to AKS concerns the Container Apps platform; this project does not create your own AKS cluster. You can retry later or try a different **compute** region:
 
