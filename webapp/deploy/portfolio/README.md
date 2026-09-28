@@ -54,52 +54,43 @@ python -m venv .venv-deploy
 .\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
 ```
 
-Before defining environment variables, **check the previous deployment values** in the repository-root `portfolio-deployment.local.json`:
+Use **`portfolio-deployment.local.json` in the repository root as the configuration source**. No `PRECO_*` environment variables are needed. Inspect the existing file before editing it. For a new checkout, create it once from the example:
 
 ```powershell
-$previousDeployment = $null
-if (Test-Path -LiteralPath '.\portfolio-deployment.local.json') {
-    $previousDeployment = Get-Content -LiteralPath '.\portfolio-deployment.local.json' -Raw | ConvertFrom-Json
-    $previousDeployment | Select-Object status, recorded_at_utc
-    $previousDeployment.environment | Format-List
-} else {
-    Write-Host 'No local deployment record. For an existing deployment, inspect Terraform state before choosing names.'
+if (!(Test-Path -LiteralPath '.\portfolio-deployment.local.json')) {
+    Copy-Item '.\portfolio-deployment.example.json' '.\portfolio-deployment.local.json'
+}
+notepad '.\portfolio-deployment.local.json'
+```
+
+Fill in the six fields and save as UTF-8:
+
+```json
+{
+  "subscription_id": "YOUR-AZURE-SUBSCRIPTION-ID",
+  "name": "yourname",
+  "location": "eastus",
+  "compute_location": "",
+  "alert_email": "you@example.com",
+  "suggestion_email": ""
 }
 ```
 
-Reuse the recorded subscription, name and data region, including any compute-region override. After reviewing them, restore those four values into this PowerShell session:
+Use your real subscription ID, a unique 6-16 character lowercase name starting with a letter, and your cost-alert email. `location` is the data region; `compute_location` can be empty to use that region or specify a different Container Apps region. `suggestion_email` can be empty; otherwise it is displayed publicly on the website. Keep API keys out of this file: the OpenAI key remains in Key Vault through `SetSecret`.
+
+The local file is Git-ignored. The example contains placeholders only. The script passes the local file directly to every Terraform plan using `-var-file`, overriding stale `TF_VAR_*` settings and generated variable files for these six fields. Old `PRECO_*` variables and `.deployment-identity` markers are ignored. There is no name/identity safeguard: editing names or regions changes the desired infrastructure and may cause Terraform to replace resources. Terraform state is preserved. The script never overwrites your configuration, including after a failed apply.
 
 ```powershell
-if ($previousDeployment) {
-    foreach ($entry in $previousDeployment.environment.PSObject.Properties) {
-        if ($entry.Name -in @('PRECO_SUBSCRIPTION_ID','PRECO_NAME','PRECO_LOCATION','PRECO_COMPUTE_LOCATION')) {
-            [Environment]::SetEnvironmentVariable($entry.Name, [string]$entry.Value, 'Process')
-        }
-    }
-}
+# Validate the JSON settings without Azure calls, Terraform commands or file writes.
+.\webapp\deploy\portfolio\deploy.ps1 -Action CheckSettings
 ```
 
-When restoring existing settings, **skip subsequent subscription/name/location assignments** and enter only the email variables. The local file is Git-ignored and records only these four settings, never keys or email addresses. The script updates it after a successful plan, immediately before apply (`apply_started`), then marks it `apply_succeeded` when apply finishes. A failed/partial apply retains its attempted settings; success applies to that individual Terraform apply, not the entire deployment workflow. `imported_from_local_state` means values recovered from existing local state, without checking Azure. The record is informational: it is not loaded automatically and editing it does not bypass the state safeguard. `Validate`, `CheckSettings`, rejected settings and failed plans do not change it.
+Use the deployment script for normal operations. If you run Terraform plan/destroy directly, explicitly pass the root file, for example `terraform -chdir=webapp/deploy/portfolio/terraform plan -var-file=../../../../portfolio-deployment.local.json`. The generated `.auto.tfvars.json` holds only rollout controls such as package hash and schedule state.
 
-Set the following **process environment variables in the same PowerShell window**. `Read-Host` keeps the entered values out of the command text saved in PowerShell history. Do not paste the answers into a tracked script, your PowerShell profile or `.env` file.
-
-```powershell
-$env:PRECO_SUBSCRIPTION_ID = Read-Host 'Azure subscription ID from az account list'
-$env:PRECO_NAME = Read-Host 'Unique resource name (6-16 lowercase letters/digits)'
-$env:PRECO_ALERT_EMAIL = Read-Host 'Email for Azure cost alerts'
-$env:PRECO_LOCATION = 'eastus' # Data/resource-group region; keep unchanged after deployment
-$env:PRECO_COMPUTE_LOCATION = '' # Optional: default uses PRECO_LOCATION
-$env:PRECO_SUGGESTION_EMAIL = Read-Host 'Public suggestion email (Enter to leave disabled)'
-```
-
-The first three variables are required for every cloud action. Location, compute location and suggestion email are optional. Subscription IDs must be real UUIDs; placeholders are rejected before Azure CLI is called. Use the same subscription and resource name on subsequent runs. Re-enter these variables after opening a new PowerShell window. Suggestion email, when configured, is intentionally visible on the public website.
-
-The script forwards these settings to Terraform using temporary `TF_VAR_*` environment variables and restores any previous values when it exits, including on failure. Only rollout controls (job enabled, schedule enabled, package hash and budget start date) are written to the git-ignored generated `.auto.tfvars.json`. A hash of the subscription/name is saved in the git-ignored `terraform/.deployment-identity` beside the state. When default local Terraform state contains managed resources, the recorded resource group is authoritative: mismatched subscription/name settings are rejected even if the marker matches, and a stale marker can be refreshed after settings match the managed state and Azure preflight succeeds. Nondefault workspaces or migrated backends are not rebound from a leftover local state file. Existing generated settings files are sanitized on the next cloud action after checking the subscription/name match. The old `config.local.json` is no longer read; you can remove your own copy if it is no longer needed.
-
-**Terraform plans, outputs and state still contain resource identifiers and configured email addresses.** Environment variables do not remove those values from Terraform's state. These artifacts are git-ignored and must not be force-added to Git. The OpenAI API key remains exclusively in Key Vault, provisioned with the existing hidden prompt.
+**Terraform plans, outputs and state still contain resource identifiers and configured email addresses.** Using a local configuration file does not remove those values from Terraform's state. These artifacts are git-ignored and must not be force-added to Git. The OpenAI API key remains exclusively in Key Vault, provisioned with the existing hidden prompt.
 
 ```powershell
-# Local Terraform validation only; no login/environment settings/OpenAI key needed.
+# Local Terraform validation only; no login/configuration/OpenAI key needed.
 .\webapp\deploy\portfolio\deploy.ps1 -Action Validate
 
 # Creates only this new stack, uploads the private package and creates a manual job.
@@ -110,7 +101,7 @@ The script forwards these settings to Terraform using temporary `TF_VAR_*` envir
 .\webapp\deploy\portfolio\deploy.ps1 -Action Smoke -Python .\.venv-deploy\Scripts\python.exe
 ```
 
-`Deploy` uses two saved Terraform plans: foundation, then workload after package upload. It applies them, creates Azure resources, and leaves the monthly schedule **disabled**. It never deletes or modifies a different deployment/state. On updates it pauses this stack's schedule, preserves its existing state/history and requires the new package to pass Smoke before resuming collection. Review the Terraform output. Azure RBAC sometimes takes several minutes to propagate; package upload retries only authorization propagation failures. If a Terraform data-plane operation fails during propagation, rerun Deploy with the same name and state.
+`Deploy` uses two saved Terraform plans: foundation, then workload after package upload. It applies them, creates Azure resources, and leaves the monthly schedule **disabled**. It uses this stack's existing state; configuration changes can create, update or replace resources in that state. On updates it pauses this stack's schedule, preserves its existing state/history and requires the new package to pass Smoke before resuming collection. Review the Terraform output. Azure RBAC sometimes takes several minutes to propagate; package upload retries only authorization propagation failures. If a Terraform data-plane operation fails during propagation, rerun Deploy with the same name and state.
 
 The initial page contains the existing five observed products and five additional selected products awaiting evidence. New prices/history/images are **not fabricated**. Five new illustrations are intentionally not generated under this reduced budget. `Publish` republishes the last durable catalog without launching Chrome or calling the model (the shared bootstrap still prepares the runtime).
 
@@ -151,43 +142,36 @@ Availability and product identity remain conservative: prices require matching s
 
 ## Troubleshooting and cleanup
 
-For an identity mismatch, changing **only** `PRECO_COMPUTE_LOCATION` cannot cause it: the identity consists of subscription ID and project name. Keep `PRECO_NAME` unchanged when selecting another compute region. The script trims accidental leading/trailing whitespace and now identifies which input disagrees with the resource group recorded in default local Terraform state.
+The previous identity-mismatch guard has been removed. The root JSON file is authoritative, and old `.deployment-identity` files are ignored. `CheckSettings` validates the file's structure and values only; Azure subscription access is checked before deployment. Removing resources manually in Azure does not remove their records from Terraform state; a new plan refreshes recorded resources against Azure.
+
+For `ManagedEnvironmentCapacityHeavyUsageError` / `AKSCapacityHeavyUsage`, Azure lacks capacity for a new managed environment in that region. The reference to AKS concerns the Container Apps platform; this project does not create your own AKS cluster. You can retry later or try a different **compute** region by editing `compute_location` in the root JSON file:
 
 ```powershell
-# Read-only, no Azure/Terraform commands, package build or file writes:
-.\webapp\deploy\portfolio\deploy.ps1 -Action CheckSettings
-```
-
-Use this check after setting environment variables in each new terminal. If it reports `PRECO_NAME differs`, restore the original project name; if it reports `PRECO_SUBSCRIPTION_ID differs`, restore the original real subscription ID. If both match managed state, a stale hash marker no longer blocks deployment; the normal Deploy action refreshes it only after Azure preflight succeeds. CheckSettings itself never rewrites the marker or state. A missing/ambiguous state or a migrated backend remains protected by the marker. **Do not delete the marker or state to bypass a mismatch when resources exist.** The state is still local and git-ignored; no subscription or email is added to tracked code.
-
-
-For `ManagedEnvironmentCapacityHeavyUsageError` / `AKSCapacityHeavyUsage`, Azure lacks capacity for a new managed environment in that region. The reference to AKS concerns the Container Apps platform; this project does not create your own AKS cluster. You can retry later or try a different **compute** region:
-
-```powershell
-# Keep PRECO_LOCATION at the region where your data services already exist.
-$env:PRECO_COMPUTE_LOCATION = 'eastus2'
+# Set compute_location to eastus2 in the JSON; keep location unchanged.
+notepad '.\portfolio-deployment.local.json'
 .\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
 ```
 
-`eastus2` is an alternative to try, not a capacity guarantee. This option changes only the Container Apps environment/job location and uses a region suffix on the alternate environment name, avoiding a name collision with the failed original environment. It preserves the Storage, Key Vault, identity and resource-group locations. Re-enter the **same compute override in subsequent PowerShell sessions**, including before enabling/disabling scheduling; clearing it returns the desired compute location to the default. Changing regions can replace existing compute resources. Cross-region Storage traffic can incur transfer charges; the small monthly package/data volume limits expected impact but it is not a hard cost cap.
+`eastus2` is an alternative to try, not a capacity guarantee. This option changes only the Container Apps environment/job location and uses a region suffix on the alternate environment name, avoiding a name collision with the failed original environment. It preserves the Storage, Key Vault, identity and resource-group locations. The compute override persists in the JSON across sessions; clearing it returns the desired compute location to the default. Changing regions can replace existing compute resources. Cross-region Storage traffic can incur transfer charges; the small monthly package/data volume limits expected impact but it is not a hard cost cap.
 
-Do not change `PRECO_LOCATION`, delete Terraform state or clear the identity marker as a workaround. An original failed environment might still exist in Azure if Terraform did not record it. The script does not delete untracked resources; inspect the original environment in the portal after the alternate deployment succeeds before deciding whether to remove it. [Microsoft capacity troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error).
+Keep `location` unchanged and preserve Terraform state when changing only the compute region. An original failed environment might still exist in Azure if Terraform did not record it. The script does not delete untracked resources; inspect the original environment in the portal after the alternate deployment succeeds before deciding whether to remove it. [Microsoft capacity troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error).
 
 
-For `MissingSubscriptionRegistration`, the current configuration explicitly registers the required namespaces instead of relying on the AzureRM default set. Rerun the updated Deploy command with the **same state and settings**; it creates a fresh plan and resumes resources not yet created. Do not apply the old saved plan, delete state, or clear the identity marker after a partial deployment. If registration is denied, a subscription administrator must grant the registration permission or register the namespaces first. See [Azure resource-provider registration](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types).
+For `MissingSubscriptionRegistration`, the current configuration explicitly registers the required namespaces instead of relying on the AzureRM default set. Rerun the updated Deploy command with the **same state and settings**; it creates a fresh plan and resumes resources not yet created. Do not apply the old saved plan or delete state after a partial deployment. If registration is denied, a subscription administrator must grant the registration permission or register the namespaces first. See [Azure resource-provider registration](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types).
 
 
 For `SubscriptionNotFound` during resource-group creation, a saved Terraform plan is not proof that Azure can access the subscription. The script now checks the selected account's enabled state/cloud, rejects competing Terraform authentication overrides without printing their values, and performs a read-only subscription request to Azure Resource Manager before packaging or applying. A successful `az account set` alone can reflect a cached account entry.
 
-In the same PowerShell session, refresh the account list and compare the subscription ID (not the tenant ID):
+Read the subscription ID from the configuration and compare it with accessible subscriptions (not tenant IDs):
 
 ```powershell
+$config = Get-Content '.\portfolio-deployment.local.json' -Raw | ConvertFrom-Json
 az account list --refresh --query "[].{Name:name,Subscription:id,Tenant:tenantId,State:state}" -o table
-az account show --subscription $env:PRECO_SUBSCRIPTION_ID --query "{Subscription:id,Tenant:tenantId,State:state,Cloud:environmentName}" -o table
-az rest --method get --url "https://management.azure.com/subscriptions/$($env:PRECO_SUBSCRIPTION_ID)?api-version=2022-12-01" --query "{Subscription:subscriptionId,State:state}" -o table
+az account show --subscription $config.subscription_id --query "{Subscription:id,Tenant:tenantId,State:state,Cloud:environmentName}" -o table
+az rest --method get --url "https://management.azure.com/subscriptions/$($config.subscription_id)?api-version=2022-12-01" --query "{Subscription:subscriptionId,State:state}" -o table
 ```
 
-If the subscription is missing, disabled or inaccessible, check **Subscriptions** in the Azure portal and log in with the account/tenant that has access (`az login --tenant <tenant-id>`). A tenant-only login using `--allow-no-subscription` is not enough. If the read-only ARM request succeeds but Terraform still fails, inspect the **names only** of overrides using `Get-ChildItem Env:ARM_* | Select-Object -ExpandProperty Name`; use a clean PowerShell session for this Azure CLI login workflow. Never share environment-variable values or access tokens. Do not delete state or change the deployment identity simply to bypass the error. The preflight does not verify every resource-creation permission or guarantee a later apply succeeds.
+If the subscription is missing, disabled or inaccessible, check **Subscriptions** in the Azure portal and log in with the account/tenant that has access (`az login --tenant <tenant-id>`). A tenant-only login using `--allow-no-subscription` is not enough. If the read-only ARM request succeeds but Terraform still fails, inspect the **names only** of overrides using `Get-ChildItem Env:ARM_* | Select-Object -ExpandProperty Name`; use a clean PowerShell session for this Azure CLI login workflow. Never share environment-variable values or access tokens. Check subscription_id in the root configuration file and preserve Terraform state. The preflight does not verify every resource-creation permission or guarantee a later apply succeeds.
 
 References: [Azure subscription selection](https://learn.microsoft.com/en-us/cli/azure/manage-azure-subscriptions-azure-cli) and [Terraform authentication](https://learn.microsoft.com/en-us/azure/developer/terraform/authenticate-to-azure).
 
@@ -199,12 +183,6 @@ az containerapp job execution list -g rg-YOURNAME-portfolio -n job-YOURNAME-mont
 az containerapp job execution show -g rg-YOURNAME-portfolio -n job-YOURNAME-monthly --job-execution-name EXECUTION_NAME
 ```
 
-If quota/region capacity prevents the job starting, select a supported region before deploying; do not add dedicated compute. If your subscription disallows budget creation, fix billing permissions instead of assuming an alert exists. For missing prices inspect the private monthly ledger and corresponding reports. To remove **this** demo, back up the data, disable scheduling, then deliberately execute `terraform -chdir=webapp/deploy/portfolio/terraform destroy`. That deletes its stored data and website; it is not part of the deploy script. Key Vault purge protection retains the deleted vault for its retention period.
+If quota/region capacity prevents the job starting, select a supported region before deploying; do not add dedicated compute. If your subscription disallows budget creation, fix billing permissions instead of assuming an alert exists. For missing prices inspect the private monthly ledger and corresponding reports. To remove **this** demo, back up the data, disable scheduling, then deliberately execute `terraform -chdir=webapp/deploy/portfolio/terraform destroy -var-file=../../../../portfolio-deployment.local.json`. That deletes its stored data and website; it is not part of the deploy script. Key Vault purge protection retains the deleted vault for its retention period.
 
 Suggested commit: `feat: add low-budget Azure portfolio deployment without ACR`.
-
-To clear the settings from the current PowerShell session after deployment:
-
-```powershell
-Remove-Item Env:PRECO_SUBSCRIPTION_ID, Env:PRECO_NAME, Env:PRECO_ALERT_EMAIL, Env:PRECO_LOCATION, Env:PRECO_COMPUTE_LOCATION, Env:PRECO_SUGGESTION_EMAIL -ErrorAction SilentlyContinue
-```

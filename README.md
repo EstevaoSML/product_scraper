@@ -1,194 +1,134 @@
-# Rendered HTML scraper
+# Preço Claro — low-budget Azure portfolio
 
-Agents can use the authenticated `scrape_html` MCP tool at `/mcp` (official Python SDK 2.2.0, protocol 2026-07-28 with legacy HTTP compatibility). See [MCP setup and client example](docs/MCP.md). REST and MCP share browser limits, URL policy and error storage.
+A retail price-history website with monthly research for **10 products across four retailers**: KaBuM, Amazon Brazil, Americanas and Casas Bahia. The website displays the latest available retailer-price average and the earliest recorded date's average.
 
-CI and regression testing are described in [docs/CI.md](docs/CI.md). Run `python scripts/container_ci.py` from a normal terminal to build and check an isolated Docker stack. GitHub Actions runs unit/security checks, dependency auditing, and the same container smoke test on pushes and pull requests. `AGENTS.md` and the PR checklist remind contributors to add tests; future AI/agent evaluations are explicitly marked as not yet implemented.
+The default deployment is `webapp/deploy/portfolio`: Azure Storage static website hosting, private ADLS Gen2 data/packages, one Container Apps Consumption Job, managed identity, Key Vault and a budget alert. It uses a public Microsoft runtime image and **does not create ACR**. Scraping, agent execution and website publication run on Azure; your computer packages the application and runs Terraform. OpenAI is the external model provider.
 
-Send an HTTPS URL to `POST /scrape`; receive JSON containing the rendered HTML, title, final URL, browser version, size, and timestamp. Each call opens a fresh browser session and closes it afterward. There is no LLM processing in this first version.
+The previous infrastructure instructions are preserved in [REDME.legacy.md](REDME.legacy.md). Use the steps below for this portfolio; no `backend.hcl` or `terraform.tfvars` needs to be copied from the legacy stack.
 
-## Azure portfolio deployment settings
+## 1. Prepare your workstation and Azure login
 
-Before defining environment variables, **check the previous deployment values** in the repository-root `portfolio-deployment.local.json`:
+Use PowerShell with Python 3.12+, Terraform 1.10+ and Azure CLI with Container Apps commands installed. You need an active Azure subscription and permission to create resources, assign roles, register resource providers and create cost budgets. A tenant-only login is insufficient.
 
-```powershell
-$previousDeployment = $null
-if (Test-Path -LiteralPath '.\portfolio-deployment.local.json') {
-    $previousDeployment = Get-Content -LiteralPath '.\portfolio-deployment.local.json' -Raw | ConvertFrom-Json
-    $previousDeployment | Select-Object status, recorded_at_utc
-    $previousDeployment.environment | Format-List
-} else {
-    Write-Host 'No local deployment record. For an existing deployment, inspect Terraform state before choosing names.'
-}
-```
-
-Reuse the recorded subscription, name and data region, including any compute-region override. After reviewing them, restore those four values into this PowerShell session:
-
-```powershell
-if ($previousDeployment) {
-    foreach ($entry in $previousDeployment.environment.PSObject.Properties) {
-        if ($entry.Name -in @('PRECO_SUBSCRIPTION_ID','PRECO_NAME','PRECO_LOCATION','PRECO_COMPUTE_LOCATION')) {
-            [Environment]::SetEnvironmentVariable($entry.Name, [string]$entry.Value, 'Process')
-        }
-    }
-}
-```
-
-When restoring existing settings, **skip subsequent subscription/name/location assignments** and enter only the email variables. The local file is Git-ignored and records only these four settings, never keys or email addresses. The script updates it after a successful plan, immediately before apply (`apply_started`), then marks it `apply_succeeded` when apply finishes. A failed/partial apply retains its attempted settings; success applies to that individual Terraform apply, not the entire deployment workflow. `imported_from_local_state` means values recovered from existing local state, without checking Azure. The record is informational: it is not loaded automatically and editing it does not bypass the state safeguard. `Validate`, `CheckSettings`, rejected settings and failed plans do not change it.
-
-Follow the [portfolio deployment guide](webapp/deploy/portfolio/README.md) for the remaining environment variables and deployment commands.
-
-## Local start (Windows PowerShell)
-
-Install/start Docker Desktop with Linux containers and the WSL2 backend. Give Docker roughly 6 GB RAM for this stack. Host Chrome and your notebook virtual environment are not used by the containers.
+Run all commands from the repository root:
 
 ```powershell
 Set-Location 'C:\Users\estev\OneDrive\Área de Trabalho\work\web_scraping'
-.\scripts\setup.ps1
-docker compose config --quiet
-docker compose up --build -d
-.\scripts\smoke.ps1
+
+az login
+az account list --query "[].{Name:name,Subscription:id,State:state}" -o table
+
+# Run once to prepare the deployment Python environment.
+python -m venv .venv-deploy
+.\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
 ```
 
-The first run builds a custom browser image. The smoke script waits for the UC worker, requests `https://example.com`, and writes `outputs/scrapes/scrape_<UTC-timestamp>_<unique-id>.json`. Local PS5 agent runs write an ordered JSON array under `outputs/scrapes`, with one `url/has_ps5_info/ps5_info` object for every page assessed by the Agent; agent reports remain in `outputs/agent`. Product images are not collected or sent to the Agent. If PowerShell blocks scripts, review the files and invoke them with a process-scoped policy according to your machine's policy. Do not weaken the system-wide policy.
+## 2. Review and edit the local configuration
 
-To try your product page:
+`portfolio-deployment.local.json` at the repository root is the configuration source. Reuse your existing file; the following command copies the example only when the local file is missing:
 
 ```powershell
-.\scripts\smoke.ps1 -Url 'https://www.americanas.com.br/console-playstation-5-edicao-digital--825gb-%E2%80%93-astro-bot-4-e-gran-turismo-7/p'
+if (!(Test-Path -LiteralPath '.\portfolio-deployment.local.json')) {
+    Copy-Item '.\portfolio-deployment.example.json' '.\portfolio-deployment.local.json'
+}
+notepad '.\portfolio-deployment.local.json'
 ```
 
-Or send a request yourself:
-
-```powershell
-$key = (Get-Content -Raw .\secrets\api_key.txt).Trim()
-$body = @{
-    url = 'https://example.com'
-    wait_seconds = 5
-    timeout_seconds = 30
-    # wait_css = 'h1'  # Optional: wait for a known element before the settling delay.
-} | ConvertTo-Json
-$result = Invoke-RestMethod 'http://localhost:8000/scrape' -Method Post `
-    -Headers @{'X-API-Key'=$key} -ContentType 'application/json' -Body $body -TimeoutSec 180
-$result.html
-```
-
-Illustrative response (values depend on the page):
+Fill in all six fields and save as UTF-8:
 
 ```json
 {
-  "url": "https://example.com",
-  "final_url": "https://example.com/",
-  "title": "Example Domain",
-  "html": "<html>...</html>",
-  "html_bytes": 1256,
-  "browser_version": "152.0.7977.82",
-  "fetched_at": "2026-09-16T12:00:00+00:00",
-  "elapsed_ms": 6400
+  "subscription_id": "YOUR-AZURE-SUBSCRIPTION-ID",
+  "name": "yourname",
+  "location": "eastus",
+  "compute_location": "",
+  "alert_email": "you@example.com",
+  "suggestion_email": ""
 }
 ```
 
-`200` means the rendered page was captured. It does **not** prove the target returned HTTP 200 or that a product was found: error pages, login screens, and CAPTCHA pages can also be captured. This API does not expose the upstream HTTP status. Verify expected content before downstream extraction. The browser backend uses `undetected-chromedriver` 3.5.5 with Chrome major version 152, matching the notebook approach. This does not guarantee access to every website or solve IP-reputation blocking.
+- `subscription_id`: the real subscription ID shown by Azure CLI, not a tenant ID.
+- `name`: a globally unique 6–16 character name, lowercase letters/digits, starting with a letter.
+- `location`: the region for the resource group and data services.
+- `compute_location`: optional Container Apps region override, such as `eastus2`; empty uses `location`. Preserve an existing override on subsequent deployments.
+- `alert_email`: your address for Azure cost alerts.
+- `suggestion_email`: optional address displayed publicly on the website; empty disables suggestions.
 
-## Container choice
+No `PRECO_*` environment variables are needed. The script passes this file directly to Terraform plans with `-var-file`. It never overwrites the file. Real settings are Git-ignored; only the placeholder example is tracked. Keep API keys in Key Vault, not in this JSON.
 
-`Dockerfile.browser` builds a custom Linux AMD64 worker from `selenium/standalone-chrome:152.0.7977.82-20260905`, retaining its matching Chrome/ChromeDriver 152 binaries. Its entrypoint runs the private UC worker instead of Selenium Grid. The API uses Python 3.12.14; the worker uses the base image's Python in a dedicated virtual environment. Selenium remains a library dependency of [undetected-chromedriver](https://github.com/ultrafunkamsterdam/undetected-chromedriver).
+Changing names or regions can replace resources. The former name/identity safeguard is removed; Terraform continues using the existing state.
 
-Each request uses `uc.Chrome(options=options, version_main=152)` with a private writable copy of the supplied ChromeDriver, an isolated profile, and the existing proxy. No driver is downloaded during requests. The worker terminates the complete job process group after success, failure or a 150-second job deadline. This includes Chrome processes left by failed initialization. Readiness checks worker availability and executable presence; use the container CI test to verify an actual browser launch.
-
-After upgrading from the Grid backend, rebuild **both** images:
-
-```powershell
-docker compose build api chrome
-docker compose up -d --no-build --wait --wait-timeout 180
-```
-
-The response includes `browser_backend: "undetected-chromedriver"`. The existing request format, URL policy, API key and persistent error volume remain in use. The browser worker also reads the API key: recreate both `api` and `chrome` when rotating it. `requirements-browser.txt` pins UC and includes setuptools to provide its distutils compatibility on Python 3.12+.
-
-The versioned tag makes upgrades deliberate. Before production, scan both images and record/pin their registry digests; dated tags are not a cryptographic immutability guarantee. Update Chrome and the matched driver together when applying browser security updates. Python dependencies are constrained to the tested versions.
-
-## Configuration and errors
-
-The default `URL_POLICY=public` accepts any public HTTPS site on port 443, including Kabum and new retailers, without listing domains. Existing `ALLOWED_HOSTS` values are ignored in this mode. Private, loopback, link-local and cloud metadata destinations remain blocked, including redirects and connections through the egress proxy. Credentials in URLs and non-HTTPS schemes remain rejected.
-
-For optional exact-host restrictions, set `URL_POLICY=allowlist` and a nonempty comma-separated `ALLOWED_HOSTS` in `.env`. Unknown policy modes fail startup. Rebuild/recreate the API after code changes; environment-only changes require recreation. Terminal environment variables override `.env`.
-
-Accepted fields: `url`, `wait_css` (optional CSS selector), `wait_seconds` (0–10, default 5), and `timeout_seconds` (5–60, default 30). The timeout applies separately to navigation and selector waiting. The HTTP client should allow up to 180 seconds including browser startup/cleanup. Use a known selector for JavaScript pages; a fixed delay cannot guarantee all dynamic content loaded.
-
-| API status | Meaning |
-|---|---|
-| 400 | URL/DNS/final redirect rejected |
-| 401 | Missing/incorrect API key |
-| 413 | Request exceeds 16 KB or encoded JSON response exceeds 3.5 MB |
-| 422 | Unknown fields or invalid field values |
-| 429 | Browser busy or requests less than three seconds apart; honor Retry-After |
-| 502 | UC/browser operation failed |
-| 503 | Browser not ready, or HTTP server concurrency limit reached |
-| 504 | Navigation/selector timed out |
-
-`GET /healthz` checks the API. `GET /readyz` checks private browser worker availability. Readiness does not guarantee the target website or an upstream proxy is reachable. One Uvicorn worker and one browser session are intentional; additional workers would bypass the process-local limit.
-
-## Proxy and security design
-
-Compose connects Chrome only to an internal network. API and `egress` also have an internet network: the API needs public DNS for URL validation, which Docker does not forward from internal-only networks. The API consequently has outbound network access; only Chrome's direct internet route is isolated. Chrome uses the gateway for HTTPS requests. The gateway resolves each destination, rejects loopback/private/link-local/reserved addresses (including cloud metadata), and connects to the checked IP literal to avoid a second DNS lookup. Redirects and HTTPS subresources pass through the same checks. Chrome's implicit localhost proxy bypass is disabled. Plain HTTP requests/assets and ports other than 443 are denied, which can affect older sites. TLS certificates are still verified by Chrome; the gateway does not decrypt page traffic.
-
-Only `127.0.0.1:8000` is published locally. Browser worker (8001), proxy (8080), and VNC ports are not published. API and gateway run as non-root with read-only filesystems, dropped capabilities, resource limits, and no-new-privileges. The API requires a random key, avoids access logs and detailed error reflection, disables caching, limits request/response sizes, and accepts no caller-supplied cookies, credentials, proxy settings, or JavaScript.
-
-The Chrome configuration uses `--no-sandbox` for container compatibility and `--disable-dev-shm-usage` for the Azure configuration. Containers and network policy therefore matter; this is not a strong isolation boundary against a browser exploit. Do not attach host folders, Docker sockets, sensitive networks, or privileged identities to the browser. The proxy is a small bounded CONNECT gateway, not a production WAF or a defense against every possible hostile browser behavior. Its 64 concurrent tunnels, 120-second tunnel lifetime, and 64 MB per-tunnel limit are operational bounds, not a total page download quota.
-
-Secret files are ignored by Git and excluded from the Docker build context. Local Compose secrets are still plaintext files. **This repo is inside OneDrive**, so those files may sync: use a throwaway local key, restrict access, and use Key Vault for cloud credentials. Rotate the local key by replacing its file and recreating both the API and Chrome worker. Scraped HTML can contain personal data or tokens; avoid logging it and set a retention policy for saved outputs. Treat HTML as untrusted data when later sending it to an LLM.
-
-### Optional external proxy
-
-Start without an external provider. For a stable outbound IP, prefer a dedicated proxy or an Azure NAT Gateway appropriate to your network. Use a reputable provider with a documented retention policy; avoid free shared proxies. Match the site region when needed, keep a stable session, keep rates low, and honor access restrictions and retry guidance. A proxy does not guarantee access or make a blocked page successful.
-
-The built-in gateway can chain through an HTTP CONNECT proxy. Put the URL in `secrets/upstream_proxy.txt` (empty means direct internet):
-
-```text
-http://username:percent-encoded-password@proxy.example.net:8080
-```
+## 3. Validate and deploy the infrastructure
 
 ```powershell
-docker compose restart egress
+# Check the JSON without Azure calls or file changes.
+.\webapp\deploy\portfolio\deploy.ps1 -Action CheckSettings
+
+# Initialize and validate the portfolio Terraform configuration.
+.\webapp\deploy\portfolio\deploy.ps1 -Action Validate
+
+# Build/upload the application package and deploy Azure resources.
+.\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
 ```
 
-The provider **must support CONNECT to an IP address**, because the gateway pins the destination IP rather than delegating destination DNS to the provider. Confirm this before buying a plan. Destination DNS runs at this gateway, so geo-DNS results may reflect its location rather than the provider's exit region. Only HTTP upstream proxies are implemented; SOCKS, HTTPS-to-proxy, PAC, and automatic rotation are not. An HTTP upstream exposes the Basic proxy credentials to the network between gateway and proxy: use it only over a trusted private connection or VPN. The tunneled website HTTPS remains encrypted. Never put proxy credentials into the API request or Chrome command-line flags.
+**Deploy creates and applies saved Terraform plans.** It runs a foundation apply, uploads the private package, then applies the job configuration. It does not pause for a separate approval between plan and apply. Monthly scheduling remains disabled after Deploy.
 
-## Azure Container Apps deployment
+Terraform state is local in `webapp/deploy/portfolio/terraform/terraform.tfstate` and Git-ignored. Back it up securely. If deployment fails partway through, fix the reported issue and rerun Deploy with the same state; completed resources can be reconciled by Terraform. Do not apply plans from a previous failed attempt.
 
-The supported cloud deployment uses Terraform under `deploy/terraform`. It creates the Container Apps environment, separate API and browser applications, ACR, managed identities, Key Vault integration, private networking and Log Analytics. Follow the [Container Apps deployment guide](deploy/terraform/README.md).
-
-## Microsoft Fabric
-
-Use a Fabric pipeline **Web activity**: POST to `/scrape`, set `Content-Type: application/json` and `X-API-Key` from your secure configuration, and use `{"url":"https://example.com","wait_seconds":5}` as the body. Enable secure input/output handling for credentials and captured content. Never store a literal key in an exported pipeline definition.
-
-Fabric's [Web activity response limit is 4 MB](https://learn.microsoft.com/en-us/fabric/data-factory/web-activity). The API limits the actual UTF-8 encoded JSON to 3.5 MB and returns 413 instead of silently truncating HTML. If larger pages become necessary, extend the API to store results in Blob/ADLS and return a small object reference; that storage mode is not yet implemented. A notebook also remains subject to this API's 3.5 MB limit.
-
-## Checks and troubleshooting
+## 4. Test the browser and publish the website
 
 ```powershell
-python -m venv .venv-api
-.\.venv-api\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv-api\Scripts\python.exe -m pytest -q
-docker compose ps
-docker compose logs --tail 100 api chrome egress
-docker compose down
+.\webapp\deploy\portfolio\deploy.ps1 -Action Smoke -Python .\.venv-deploy\Scripts\python.exe
 ```
 
-The `checks/` name avoids the notebook repo's existing `*test*` ignore rule. Unit and local proxy integration checks do not establish that Americanas allows this browser. A real container smoke test is still required. Treat container logs as potentially sensitive when troubleshooting even though API access logging is disabled.
+Smoke runs the real browser on Azure against `https://example.com`, seeds the catalog and publishes the static website. It makes no OpenAI calls. The command waits for completion and prints the website URL on success. Initial data includes the existing observed products and selected products awaiting evidence; it does not fabricate missing prices.
 
-If the site renders a block page, inspect the JSON content and stop/retry according to the site's policy; don't assume a proxy or a different delay will solve it. A blank/partial page may require a specific `wait_css`, more settling time, or may depend on blocked plaintext HTTP resources. DNS/proxy errors appear as browser errors or browser-rendered error content. Memory-related browser crashes require more Docker RAM, fewer competing workloads, or adjustments to the Chrome memory limit.
+## 5. Store the OpenAI key and test collection
 
-## Agent navigation and Azure Container Apps
+```powershell
+# Enter the key through a hidden prompt; it is stored in Azure Key Vault.
+.\webapp\deploy\portfolio\deploy.ps1 -Action SetSecret -Python .\.venv-deploy\Scripts\python.exe
 
-The scraper now exposes session-based MCP navigation: open, inspect, search, follow links and close. See [the agent guide](docs/AGENT-NAVIGATION.md) for tool payloads, evidence-backed product reports and the provider-neutral decision loop. Your agent supplies the LLM; the server enforces navigation and session budgets.
+# Test one product/retailer pair, with a maximum research budget of USD 0.05.
+.\webapp\deploy\portfolio\deploy.ps1 -Action CollectOne -Python .\.venv-deploy\Scripts\python.exe
+```
 
-Use [the Container Apps deployment guide](deploy/terraform/README.md) for Terraform, Key Vault, managed identities and migration from the earlier Functions design. The current Terraform deploys no Azure Function. Existing `/scrape` and `scrape_html` remain available when no navigation session owns the browser.
+After checking the result, collect the remaining monthly pairs:
 
+```powershell
+.\webapp\deploy\portfolio\deploy.ps1 -Action CollectMonthly -Python .\.venv-deploy\Scripts\python.exe
+```
 
-## Azure DevOps delivery and cloud error logs
+The collector reserves at most USD 2 for forty research attempts per UTC month, including CollectOne. Repeated runs skip previously attempted pairs. Image generation is disabled; existing illustrations are reused. Azure usage is billed separately, and the Azure budget alert does not enforce a spending cap. See the [detailed cost assumptions and limits](webapp/deploy/portfolio/README.md#expected-monthly-cost).
 
-[Azure DevOps CI/CD setup](deploy/azure-devops/README.md) documents the Terraform bootstrap, protected pipelines, workload identity federation, approval-gated deployment and post-deployment Log Analytics verification. Container errors include severity, service, revision and request ID; use the saved workspace queries installed by the application Terraform.
+## 6. Enable monthly updates
 
-## GPT-5 mini retail research agent
+```powershell
+.\webapp\deploy\portfolio\deploy.ps1 -Action EnableSchedule -Python .\.venv-deploy\Scripts\python.exe
+```
 
-See [docs/RETAIL-AGENT.md](docs/RETAIL-AGENT.md) for the bounded agent, Azure Container Apps Job, private reports and synthetic evaluations. Infrastructure is optional through `enable_research_agent`; running a model always requires an explicit spending cap.
+This requires a successful Smoke run for the current package and an enabled Key Vault secret. The schedule runs on the first day of each month at 09:00 UTC (06:00 Brasília).
+
+To stop future scheduled runs while retaining the website and data:
+
+```powershell
+.\webapp\deploy\portfolio\deploy.ps1 -Action DisableSchedule -Python .\.venv-deploy\Scripts\python.exe
+```
+
+To publish the stored catalog without a new research run:
+
+```powershell
+.\webapp\deploy\portfolio\deploy.ps1 -Action Publish -Python .\.venv-deploy\Scripts\python.exe
+```
+
+After a code update, run Deploy and Smoke again before re-enabling the monthly schedule.
+
+## Documentation and development
+
+- [Detailed portfolio infrastructure, costs, troubleshooting and cleanup](webapp/deploy/portfolio/README.md)
+- [Validation results and outstanding integration checks](webapp/deploy/portfolio/VALIDATION.md)
+- [Web application guide](webapp/README.md)
+- [Retail research agent](docs/RETAIL-AGENT.md)
+- [MCP setup](docs/MCP.md) and [agent navigation](docs/AGENT-NAVIGATION.md)
+- [CI and regression checks](docs/CI.md)
+- [Legacy infrastructure, local Docker scraper and API guide](REDME.legacy.md)

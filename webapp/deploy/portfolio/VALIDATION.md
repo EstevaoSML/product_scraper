@@ -33,3 +33,9 @@ Enabling scheduling or collection through the script requires a successful Azure
 The previous production stack was not deployed, migrated or removed. Its validation history remains in `webapp/VALIDATION.md`.
 
 - 2026-09-28: root `portfolio-deployment.local.json` records allowlisted subscription/name/regions before each apply and its completion status. Existing local values were recovered from local state without querying Azure. The file and temporary writes are Git-ignored. Both READMEs document inspection/restoration before setting environment variables. Full suite: **423 passed**, **92.43% app branch coverage**, one existing deprecation warning. Twelve new cases cover creation/replacement, failed plans and partial applies on PowerShell 5.1/7; identity checks also verify that the record remains unchanged. All cloud commands in checks were mocked; no live deployment was run.
+
+## Root JSON configuration (2026-09-28)
+
+The root `portfolio-deployment.local.json` is now the authoritative six-field input file, passed directly to Terraform plan with `-var-file`. PRECO environment inputs, the identity guard and automatic input-file rewrites have been removed. Earlier entries describing them are historical. The local file was migrated preserving subscription/name/regions and recovering the alert email from existing local state; CheckSettings passed without Azure calls. A placeholder-only example is tracked; real settings remain Git-ignored.
+
+Full suite: **415 passed**, **92.43% app branch coverage**, one pre-existing deprecation warning. Obsolete guard/recording checks were replaced with file configuration checks covering invalid/missing input, unknown secret fields, legacy input sanitization, old state/marker tolerance, file precedence and unchanged configuration after successful/failed plans/applies on PowerShell 5.1 and 7. Cloud calls are mocked; no real Azure deployment was performed.

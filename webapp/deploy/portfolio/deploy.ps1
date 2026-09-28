@@ -10,7 +10,6 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $scratch = Join-Path $repo '.ci-runtime/portfolio'
 $varsFile = Join-Path $infra 'portfolio.auto.tfvars.json'
 $outputsFile = Join-Path $scratch 'outputs.json'
-$identityFile = Join-Path $infra '.deployment-identity'
 $settingsFile = Join-Path $repo 'portfolio-deployment.local.json'
 function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
@@ -59,68 +58,35 @@ function Repair-VariablesEncoding {
         }
     }
 }
-function Confirm-DeploymentIdentity($Settings, [string]$Identity) {
-    # Only trust the default local state here. A migrated backend/workspace must
-    # not be rebound using a leftover local state file.
-    $workspaceFile = Join-Path $infra '.terraform/environment'
-    $backendFile = Join-Path $infra '.terraform/terraform.tfstate'
-    $stateFile = Join-Path $infra 'terraform.tfstate'
-    $localDefault = !(Test-Path -LiteralPath $workspaceFile) -or (Get-Content -LiteralPath $workspaceFile -Raw).Trim() -eq 'default'
-    if (Test-Path -LiteralPath $backendFile) {
-        $backend = [IO.File]::ReadAllText($backendFile) | ConvertFrom-Json
-        if ($backend.backend.type) { $localDefault = $false }
+function Read-DeploymentSettings {
+    if (!(Test-Path -LiteralPath $settingsFile)) {
+        throw 'Create portfolio-deployment.local.json in the repository root from portfolio-deployment.example.json and fill in your settings.'
     }
-    if ($localDefault -and (Test-Path -LiteralPath $stateFile)) {
-        $state = [IO.File]::ReadAllText($stateFile) | ConvertFrom-Json
-        if ($state.version -ne 4) { throw 'Unrecognized Terraform state format; identity cannot be verified safely.' }
-        $managed = @($state.resources | Where-Object { $_.mode -eq 'managed' -and @($_.instances).Count -gt 0 })
-        if ($managed.Count) {
-            $groups = @($managed | Where-Object { $_.type -eq 'azurerm_resource_group' -and $_.name -eq 'portfolio' })
-            if ($groups.Count -ne 1 -or @($groups[0].instances).Count -ne 1) {
-                throw 'Existing resources found but project identity is ambiguous. Preserve state and inspect the deployment.'
-            }
-            $group = $groups[0].instances[0].attributes
-            if ($group.id -notmatch '^/subscriptions/([0-9a-fA-F-]{36})/resourceGroups/([^/]+)$') {
-                throw 'Cannot verify resource-group identity from Terraform state.'
-            }
-            $recordedSubscription = $Matches[1]
-            $recordedGroup = $Matches[2]
-            if ($Settings.subscription_id -ne $recordedSubscription) {
-                throw 'PRECO_SUBSCRIPTION_ID differs from the subscription in Terraform state. Restore the original subscription ID; do not clear the identity marker or state.'
-            }
-            if ($recordedGroup -ne ('rg-' + $Settings.name + '-portfolio')) {
-                throw 'PRECO_NAME differs from the project in Terraform state. Keep the original project name; use PRECO_COMPUTE_LOCATION alone to change compute region.'
-            }
-            # Matching managed state is authoritative even if the local marker
-            # is stale. The marker is refreshed only after Azure preflight passes.
-            return
+    try { $config = [IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json }
+    catch { throw 'portfolio-deployment.local.json must contain a valid JSON object.' }
+    $keys = @('subscription_id','name','location','compute_location','alert_email','suggestion_email')
+    if ($config -isnot [PSCustomObject]) { throw 'portfolio-deployment.local.json must contain a JSON object.' }
+    foreach ($property in $config.PSObject.Properties) {
+        if ($property.Name -cnotin $keys) { throw 'Unknown configuration field. Use only the fields in portfolio-deployment.example.json; keep secrets in Key Vault.' }
+    }
+    foreach ($key in $keys) {
+        if ($config.$key -isnot [string] -or $config.$key -cne $config.$key.Trim()) {
+            throw "Configuration field '$key' must be a string without surrounding whitespace."
         }
     }
-    if ((Test-Path -LiteralPath $identityFile) -and (Get-Content -LiteralPath $identityFile -Raw).Trim() -ne $Identity) {
-        throw 'These environment settings target another deployment: PRECO_SUBSCRIPTION_ID or PRECO_NAME changed. State could not confirm a safe rebind; preserve the marker and state.'
+    if ($config.subscription_id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
+        throw 'Set subscription_id in portfolio-deployment.local.json to your real Azure subscription UUID.'
     }
-}
-function Save-DeploymentSettings([string]$Status) {
-    # An explicit allowlist prevents credentials/emails from entering this record.
-    # This is a reminder of apply inputs, not proof of Azure resource existence.
-    $record = [ordered]@{
-        schema_version = 1
-        status = $Status
-        recorded_at_utc = (Get-Date).ToUniversalTime().ToString('o')
-        environment = [ordered]@{
-            PRECO_SUBSCRIPTION_ID = $settings.subscription_id
-            PRECO_NAME = $settings.name
-            PRECO_LOCATION = $settings.location
-            PRECO_COMPUTE_LOCATION = $settings.compute_location
-        }
+    if ($config.name -cnotmatch '^[a-z][a-z0-9]{5,15}$') {
+        throw 'Set name to 6-16 lowercase letters/digits, starting with a letter.'
     }
-    $temporary = $settingsFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
-    try {
-        Write-Utf8File $temporary ($record | ConvertTo-Json -Depth 4)
-        Move-Item -LiteralPath $temporary -Destination $settingsFile -Force
-    } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    if ($config.location -cnotmatch '^[a-z][a-z0-9]+$' -or ($config.compute_location -and $config.compute_location -cnotmatch '^[a-z][a-z0-9]+$')) {
+        throw 'Use Azure region codes for location and compute_location; compute_location can be empty.'
     }
+    if ($config.alert_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$' -or ($config.suggestion_email -and $config.suggestion_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$')) {
+        throw 'Set a valid alert_email; suggestion_email can be empty or a valid email address.'
+    }
+    return $config
 }
 function Save-Variables($Values) {
     # Persist only rollout controls, never operator-provided settings.
@@ -137,121 +103,73 @@ function Save-Outputs {
 }
 function Apply-Plan {
     $plan = Join-Path $scratch 'portfolio.tfplan'
-    Invoke-Checked $Terraform @("-chdir=$infra", 'plan', "-out=$plan")
+    Invoke-Checked $Terraform @("-chdir=$infra", 'plan', "-var-file=$settingsFile", "-out=$plan")
     # This script is explicitly invoked for deployment. The saved plan is the
     # reviewed configuration; no hidden terraform destroy or resource migration.
-    Save-DeploymentSettings 'apply_started'
     Invoke-Checked $Terraform @("-chdir=$infra", 'apply', $plan)
-    Save-DeploymentSettings 'apply_succeeded'
     Save-Outputs
 }
-$savedEnvironment = @{}
-try {
-    if ($Action -ne 'Validate') {
-        $settings = @{
-            subscription_id = $env:PRECO_SUBSCRIPTION_ID
-            name = $env:PRECO_NAME
-            location = $(if ($env:PRECO_LOCATION) { $env:PRECO_LOCATION } else { 'eastus' })
-            compute_location = $(if ($env:PRECO_COMPUTE_LOCATION) { $env:PRECO_COMPUTE_LOCATION } else { '' })
-            alert_email = $env:PRECO_ALERT_EMAIL
-            suggestion_email = $(if ($env:PRECO_SUGGESTION_EMAIL) { $env:PRECO_SUGGESTION_EMAIL } else { '' })
-        }
-        foreach ($key in @($settings.Keys)) { $settings[$key] = ([string]$settings[$key]).Trim() }
-        if ($settings.subscription_id -notmatch '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
-            throw 'Set $env:PRECO_SUBSCRIPTION_ID to your real Azure subscription UUID (no placeholder).'
-        }
-        if ($settings.name -notmatch '^[a-z][a-z0-9]{5,15}$' -or $settings.name -cmatch '[A-Z]') {
-            throw 'Set $env:PRECO_NAME to a unique 6-16 character lowercase name, starting with a letter.'
-        }
-        if ($Action -ne 'CheckSettings' -and $settings.alert_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
-            throw 'Set $env:PRECO_ALERT_EMAIL to the address that should receive Azure cost alerts.'
-        }
-        if ($Action -ne 'CheckSettings' -and $settings.suggestion_email -and $settings.suggestion_email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
-            throw 'PRECO_SUGGESTION_EMAIL must be empty or a valid email address.'
-        }
-        # TF_VAR_* values are inherited by Terraform only for this script run.
-        foreach ($key in $settings.Keys) {
-            $envName = 'TF_VAR_' + $key
-            $savedEnvironment[$envName] = [Environment]::GetEnvironmentVariable($envName, 'Process')
-            [Environment]::SetEnvironmentVariable($envName, $settings[$key], 'Process')
-        }
-        $hasher = [Security.Cryptography.SHA256]::Create()
-        try {
-            $bytes = [Text.Encoding]::UTF8.GetBytes($settings.subscription_id.ToLowerInvariant() + '/' + $settings.name)
-            $identity = ([BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
-        } finally { $hasher.Dispose() }
-        Confirm-DeploymentIdentity $settings $identity
-        if ($Action -eq 'CheckSettings') {
-            Write-Host 'Subscription and project settings passed the local identity check. No Azure calls or file changes made.'
-            return
-        }
-        # Migrate the old generated file without letting its higher-precedence
-        # values silently override the new environment settings.
-        if (Test-Path -LiteralPath $varsFile) {
-            $previous = Get-Content -LiteralPath $varsFile -Raw | ConvertFrom-Json
-            if (($previous.name -and $previous.name -ne $settings.name) -or
-                ($previous.subscription_id -and $previous.subscription_id -ne $settings.subscription_id)) {
-                throw 'Environment settings differ from the existing deployment. Keep the original subscription/name or use separate state.'
-            }
-            Write-Utf8File $identityFile $identity
-            Save-Variables $previous
-        }
-    }
-    New-Item -ItemType Directory -Force -Path $scratch | Out-Null
-    Repair-VariablesEncoding
-    Invoke-Checked $Terraform @("-chdir=$infra", 'init', '-input=false')
-    Invoke-Checked $Terraform @("-chdir=$infra", 'validate')
-    if ($Action -eq 'Validate') { return }
-    Invoke-Checked 'az' @('account', 'set', '--subscription', $settings.subscription_id)
-    Confirm-AzureSubscription $settings.subscription_id
-    Write-Utf8File $identityFile $identity
-    if ($Action -eq 'Deploy') {
-        # Build before creating billable resources; dependency download is local,
-        # while all scraping, model research and scheduled work execute on Azure.
-        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'package.py'), '--output', $scratch)
-        $values = @{
-            deploy_job = $false
-            enable_monthly_schedule = $false; package_sha256 = ''
-            budget_start_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-01T00:00:00Z')
-        }
-        if (Test-Path -LiteralPath $varsFile) {
-            $previous = Get-Content -LiteralPath $varsFile -Raw | ConvertFrom-Json
-            $values.deploy_job = $previous.deploy_job
-            $values.package_sha256 = $previous.package_sha256
-            $values.budget_start_date = $previous.budget_start_date
-        }
-        Save-Variables $values
-        Apply-Plan
-        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'upload', '--outputs', $outputsFile, '--package', (Join-Path $scratch 'package.json'))
-        $package = Get-Content -LiteralPath (Join-Path $scratch 'package.json') -Raw | ConvertFrom-Json
-        $values.package_sha256 = $package.sha256
-        $values.deploy_job = $true
-        Save-Variables $values
-        Apply-Plan
-        Write-Host 'Deployed with scheduling disabled. Run -Action Smoke next; no OpenAI key is needed.'
+if ($Action -ne 'Validate') {
+    $settings = Read-DeploymentSettings
+    if ($Action -eq 'CheckSettings') {
+        Write-Host 'Configuration file passed validation. No Azure calls or file changes made.'
         return
     }
-    Save-Outputs
-    if ($Action -eq 'SetSecret') {
-        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'set-secret', '--outputs', $outputsFile)
-    } elseif ($Action -in @('EnableSchedule','DisableSchedule')) {
-        if ($Action -eq 'EnableSchedule') {
-            Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-ready', '--outputs', $outputsFile)
-        }
-        $values = Get-Content -LiteralPath $varsFile -Raw | ConvertFrom-Json
-        $values.enable_monthly_schedule = $Action -eq 'EnableSchedule'
-        Save-Variables $values
-        Apply-Plan
-    } else {
-        $mode = switch ($Action) { 'Smoke' { 'smoke' } 'Publish' { 'publish' } default { 'collect' } }
-        $limit = if ($Action -eq 'CollectOne') { '1' } else { '40' }
-        if ($mode -eq 'collect') {
-            Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-ready', '--outputs', $outputsFile)
-        }
-        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'start', '--outputs', $outputsFile, '--mode', $mode, '--limit', $limit)
+    # Remove legacy input copies; the explicit JSON -var-file is authoritative.
+    if (Test-Path -LiteralPath $varsFile) {
+        $previous = [IO.File]::ReadAllText($varsFile) | ConvertFrom-Json
+        Save-Variables $previous
     }
-} finally {
-    foreach ($envName in $savedEnvironment.Keys) {
-        [Environment]::SetEnvironmentVariable($envName, $savedEnvironment[$envName], 'Process')
+}
+New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+Repair-VariablesEncoding
+Invoke-Checked $Terraform @("-chdir=$infra", 'init', '-input=false')
+Invoke-Checked $Terraform @("-chdir=$infra", 'validate')
+if ($Action -eq 'Validate') { return }
+Invoke-Checked 'az' @('account', 'set', '--subscription', $settings.subscription_id)
+Confirm-AzureSubscription $settings.subscription_id
+if ($Action -eq 'Deploy') {
+    # Build before creating billable resources; dependency download is local,
+    # while all scraping, model research and scheduled work execute on Azure.
+    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'package.py'), '--output', $scratch)
+    $values = @{
+        deploy_job = $false
+        enable_monthly_schedule = $false; package_sha256 = ''
+        budget_start_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-01T00:00:00Z')
     }
+    if (Test-Path -LiteralPath $varsFile) {
+        $previous = Get-Content -LiteralPath $varsFile -Raw | ConvertFrom-Json
+        $values.deploy_job = $previous.deploy_job
+        $values.package_sha256 = $previous.package_sha256
+        $values.budget_start_date = $previous.budget_start_date
+    }
+    Save-Variables $values
+    Apply-Plan
+    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'upload', '--outputs', $outputsFile, '--package', (Join-Path $scratch 'package.json'))
+    $package = Get-Content -LiteralPath (Join-Path $scratch 'package.json') -Raw | ConvertFrom-Json
+    $values.package_sha256 = $package.sha256
+    $values.deploy_job = $true
+    Save-Variables $values
+    Apply-Plan
+    Write-Host 'Deployed with scheduling disabled. Run -Action Smoke next; no OpenAI key is needed.'
+    return
+}
+Save-Outputs
+if ($Action -eq 'SetSecret') {
+    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'set-secret', '--outputs', $outputsFile)
+} elseif ($Action -in @('EnableSchedule','DisableSchedule')) {
+    if ($Action -eq 'EnableSchedule') {
+        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-ready', '--outputs', $outputsFile)
+    }
+    $values = Get-Content -LiteralPath $varsFile -Raw | ConvertFrom-Json
+    $values.enable_monthly_schedule = $Action -eq 'EnableSchedule'
+    Save-Variables $values
+    Apply-Plan
+} else {
+    $mode = switch ($Action) { 'Smoke' { 'smoke' } 'Publish' { 'publish' } default { 'collect' } }
+    $limit = if ($Action -eq 'CollectOne') { '1' } else { '40' }
+    if ($mode -eq 'collect') {
+        Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-ready', '--outputs', $outputsFile)
+    }
+    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'start', '--outputs', $outputsFile, '--mode', $mode, '--limit', $limit)
 }
