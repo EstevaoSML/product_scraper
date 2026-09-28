@@ -123,6 +123,20 @@ Availability and product identity remain conservative: prices require matching s
 
 ## Troubleshooting and cleanup
 
+For `SubscriptionNotFound` during resource-group creation, a saved Terraform plan is not proof that Azure can access the subscription. The script now checks the selected account's enabled state/cloud, rejects competing Terraform authentication overrides without printing their values, and performs a read-only subscription request to Azure Resource Manager before packaging or applying. A successful `az account set` alone can reflect a cached account entry.
+
+In the same PowerShell session, refresh the account list and compare the subscription ID (not the tenant ID):
+
+```powershell
+az account list --refresh --query "[].{Name:name,Subscription:id,Tenant:tenantId,State:state}" -o table
+az account show --subscription $env:PRECO_SUBSCRIPTION_ID --query "{Subscription:id,Tenant:tenantId,State:state,Cloud:environmentName}" -o table
+az rest --method get --url "https://management.azure.com/subscriptions/$($env:PRECO_SUBSCRIPTION_ID)?api-version=2022-12-01" --query "{Subscription:subscriptionId,State:state}" -o table
+```
+
+If the subscription is missing, disabled or inaccessible, check **Subscriptions** in the Azure portal and log in with the account/tenant that has access (`az login --tenant <tenant-id>`). A tenant-only login using `--allow-no-subscription` is not enough. If the read-only ARM request succeeds but Terraform still fails, inspect the **names only** of overrides using `Get-ChildItem Env:ARM_* | Select-Object -ExpandProperty Name`; use a clean PowerShell session for this Azure CLI login workflow. Never share environment-variable values or access tokens. Do not delete state or change the deployment identity simply to bypass the error. The preflight does not verify every resource-creation permission or guarantee a later apply succeeds.
+
+References: [Azure subscription selection](https://learn.microsoft.com/en-us/cli/azure/manage-azure-subscriptions-azure-cli) and [Terraform authentication](https://learn.microsoft.com/en-us/azure/developer/terraform/authenticate-to-azure).
+
 If Terraform reports `Invalid start of value` with unexpected characters before `{` in `portfolio.auto.tfvars.json`, older script versions wrote a UTF-8 byte-order mark under Windows PowerShell 5.1. The current script writes BOM-free UTF-8 on both PowerShell 5.1 and 7 and repairs that generated file before invoking Terraform. Rerun the updated script; do not delete your Terraform state or change your deployment settings to resolve this encoding error.
 
 ```powershell

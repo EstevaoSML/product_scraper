@@ -17,6 +17,7 @@ def script_copy(tmp_path):
 
 
 SETTINGS = """
+Get-ChildItem Env:ARM_* | Remove-Item
 $env:PRECO_SUBSCRIPTION_ID = '11111111-1111-1111-1111-111111111111'
 $env:PRECO_NAME = 'fixture01'
 $env:PRECO_ALERT_EMAIL = 'operator@example.com'
@@ -55,8 +56,10 @@ function terraform {
     $global:LASTEXITCODE = 0
 }
 function az {
-    if ($args[-1] -ne $env:PRECO_SUBSCRIPTION_ID) { throw 'Wrong Azure subscription' }
     $global:LASTEXITCODE = 0
+    if ($args[0] -eq 'rest') { return (@{subscriptionId=$env:PRECO_SUBSCRIPTION_ID; state='Enabled'} | ConvertTo-Json) }
+    if ($args[1] -eq 'show') { return (@{id=$env:PRECO_SUBSCRIPTION_ID; state='Enabled'; environmentName='AzureCloud'} | ConvertTo-Json) }
+    if ($args[-1] -ne $env:PRECO_SUBSCRIPTION_ID) { throw 'Wrong Azure subscription' }
 }
 function python { throw 'fixture-build-stop' }
 try { & '""" + str(script).replace("'", "''") + """' -Action Deploy }
@@ -118,3 +121,31 @@ Save-Outputs
     assert json.loads(variables.read_text(encoding='utf-8'))['package_sha256'] == 'ação'
     outputs = tmp_path / 'repo/.ci-runtime/portfolio/outputs.json'
     assert json.loads(outputs.read_text(encoding='utf-8'))['label']['value'] == 'São Paulo — ação'
+
+
+@pytest.mark.parametrize('scenario,expected', [
+    ('healthy', 'confirmed'), ('cached_only', 'cannot access this subscription'),
+    ('disabled', 'Enabled subscription'), ('override', 'authentication overrides')])
+def check_live_subscription_preflight(tmp_path, scenario, expected):
+    script = script_copy(tmp_path)
+    setup = "$env:ARM_CLIENT_SECRET = 'fixture-credential-canary'\n" if scenario == 'override' else ''
+    command = SETTINGS + setup + """
+function terraform { $global:LASTEXITCODE = 0 }
+function az {
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq 'account') {
+        return (@{id=$env:PRECO_SUBSCRIPTION_ID; state='""" + ('Disabled' if scenario == 'disabled' else 'Enabled') + """'; environmentName='AzureCloud'} | ConvertTo-Json)
+    }
+    if ('""" + scenario + """' -eq 'cached_only') { $global:LASTEXITCODE = 1; return }
+    if ('""" + scenario + """' -ne 'healthy') { throw 'Unexpected live request' }
+    if ($args[0] -ne 'rest' -or $args[2] -ne 'get') { throw 'Only a read-only ARM request is allowed' }
+    return (@{subscriptionId=$env:PRECO_SUBSCRIPTION_ID; state='Enabled'} | ConvertTo-Json)
+}
+. '""" + str(script).replace("'", "''") + """' -Action Validate
+Confirm-AzureSubscription $env:PRECO_SUBSCRIPTION_ID
+Write-Output 'confirmed'
+"""
+    result = powershell(command)
+    assert (result.returncode == 0) == (scenario == 'healthy'), result.stderr
+    assert expected in result.stdout + result.stderr
+    assert 'fixture-credential-canary' not in result.stdout + result.stderr

@@ -2,7 +2,9 @@
 
 ## Completed locally
 
-- Full repository suite after the environment-variable and encoding fixes: **399 passed**, including **33 portfolio checks**. Command: `python -m pytest -q --cov=app --cov-branch --cov-fail-under=80`. Coverage of the existing `app` package, with branches: **92.43%**; this is not the coverage percentage for `webapp.portfolio`.
+- Subscription preflight: four mocked cases cover an accessible subscription, stale CLI cache with ARM rejection, a disabled subscription, and competing Terraform credentials. No Azure writes or deployment retries were performed. This check improves diagnosis; it does not establish why the user's live subscription returned 404.
+
+- Full repository suite after the environment-variable and encoding fixes: **403 passed**, including **37 portfolio checks**. Command: `python -m pytest -q --cov=app --cov-branch --cov-fail-under=80`. Coverage of the existing `app` package, with branches: **92.43%**; this is not the coverage percentage for `webapp.portfolio`.
 - Regression checks executed in both Windows PowerShell 5.1 and PowerShell 7 verify BOM-free UTF-8 for generated variables/outputs, Unicode preservation, and automatic repair of an existing BOM before Terraform starts. The affected local variables file was repaired without changing its JSON values; Terraform validate passed. No Azure plan/apply was run for this fix.
 - Five additional PowerShell cases verify missing/placeholder/invalid subscription rejection before external tools, environment forwarding and restoration after failure, sanitization of legacy generated settings, and rejection of a different deployment identity. All Azure/Terraform mutations are mocked; this update did not deploy resources.
 - The Windows sandbox run used a test-process-only temporary-directory ACL workaround restricted to that run's scratch directory. Production code was not changed to relax filesystem permissions for tests. One existing Starlette/AnyIO deprecation warning remains.

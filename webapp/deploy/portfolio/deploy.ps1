@@ -15,6 +15,33 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Command failed: $Exe (exit $LASTEXITCODE)" }
 }
+function Confirm-AzureSubscription([string]$SubscriptionId) {
+    # account set/show can succeed using a stale local Azure CLI account cache.
+    $json = & az account show --subscription $SubscriptionId --only-show-errors -o json
+    if ($LASTEXITCODE -ne 0) { throw 'Azure login cannot select this subscription. Run az account list --refresh and log in to the correct tenant.' }
+    $account = ($json -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($account.id -ne $SubscriptionId -or $account.state -ne 'Enabled' -or $account.environmentName -ne 'AzureCloud') {
+        throw 'This deployment requires an Enabled subscription in AzureCloud. Check the subscription ID (not tenant ID), account and tenant.'
+    }
+    # Never print credential values. Fail rather than silently use another
+    # Terraform identity while uploads and secret provisioning use Azure CLI.
+    $overrides = @(Get-ChildItem Env:ARM_* | Where-Object {
+        $_.Name -match '^ARM_(CLIENT_|TENANT_ID$|USE_OIDC$|USE_MSI$|OIDC_|MSI_)' -and $_.Value
+    } | Select-Object -ExpandProperty Name)
+    if ($overrides.Count -or ($env:ARM_USE_CLI -and $env:ARM_USE_CLI -ne 'true') -or
+        ($env:ARM_ENVIRONMENT -and $env:ARM_ENVIRONMENT -ne 'public')) {
+        throw 'Terraform authentication overrides are set in ARM_* environment variables. Use a clean PowerShell session with az login for this interactive deployment; do not print or share credential values.'
+    }
+    $url = 'https://management.azure.com/subscriptions/' + $SubscriptionId + '?api-version=2022-12-01'
+    $json = & az rest --method get --url $url --only-show-errors -o json
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Azure Resource Manager cannot access this subscription. Refresh az login in the correct tenant and verify an active Azure subscription in the portal. No packaging or apply was attempted.'
+    }
+    $subscription = ($json -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($subscription.subscriptionId -ne $SubscriptionId -or $subscription.state -ne 'Enabled') {
+        throw 'Azure Resource Manager did not confirm the expected Enabled subscription. Deployment stopped.'
+    }
+}
 function Write-Utf8File([string]$Path, [string]$Text) {
     # Windows PowerShell 5.1's Set-Content -Encoding utf8 adds a BOM.
     # Use an explicit encoding so Terraform receives the same bytes on 5.1/7.
@@ -106,6 +133,7 @@ try {
     Invoke-Checked $Terraform @("-chdir=$infra", 'validate')
     if ($Action -eq 'Validate') { return }
     Invoke-Checked 'az' @('account', 'set', '--subscription', $settings.subscription_id)
+    Confirm-AzureSubscription $settings.subscription_id
     Write-Utf8File $identityFile $identity
     if ($Action -eq 'Deploy') {
         # Build before creating billable resources; dependency download is local,
