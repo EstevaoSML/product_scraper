@@ -54,7 +54,34 @@ python -m venv .venv-deploy
 .\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
 ```
 
-Set the following **process environment variables in the same PowerShell window**. `Read-Host` keeps the entered values out of the command text saved in PowerShell history; no configuration file is needed. Do not paste the answers into a tracked script, your PowerShell profile or `.env` file.
+Before defining environment variables, **check the previous deployment values** in the repository-root `portfolio-deployment.local.json`:
+
+```powershell
+$previousDeployment = $null
+if (Test-Path -LiteralPath '.\portfolio-deployment.local.json') {
+    $previousDeployment = Get-Content -LiteralPath '.\portfolio-deployment.local.json' -Raw | ConvertFrom-Json
+    $previousDeployment | Select-Object status, recorded_at_utc
+    $previousDeployment.environment | Format-List
+} else {
+    Write-Host 'No local deployment record. For an existing deployment, inspect Terraform state before choosing names.'
+}
+```
+
+Reuse the recorded subscription, name and data region, including any compute-region override. After reviewing them, restore those four values into this PowerShell session:
+
+```powershell
+if ($previousDeployment) {
+    foreach ($entry in $previousDeployment.environment.PSObject.Properties) {
+        if ($entry.Name -in @('PRECO_SUBSCRIPTION_ID','PRECO_NAME','PRECO_LOCATION','PRECO_COMPUTE_LOCATION')) {
+            [Environment]::SetEnvironmentVariable($entry.Name, [string]$entry.Value, 'Process')
+        }
+    }
+}
+```
+
+When restoring existing settings, **skip subsequent subscription/name/location assignments** and enter only the email variables. The local file is Git-ignored and records only these four settings, never keys or email addresses. The script updates it after a successful plan, immediately before apply (`apply_started`), then marks it `apply_succeeded` when apply finishes. A failed/partial apply retains its attempted settings; success applies to that individual Terraform apply, not the entire deployment workflow. `imported_from_local_state` means values recovered from existing local state, without checking Azure. The record is informational: it is not loaded automatically and editing it does not bypass the state safeguard. `Validate`, `CheckSettings`, rejected settings and failed plans do not change it.
+
+Set the following **process environment variables in the same PowerShell window**. `Read-Host` keeps the entered values out of the command text saved in PowerShell history. Do not paste the answers into a tracked script, your PowerShell profile or `.env` file.
 
 ```powershell
 $env:PRECO_SUBSCRIPTION_ID = Read-Host 'Azure subscription ID from az account list'

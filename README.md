@@ -6,6 +6,37 @@ CI and regression testing are described in [docs/CI.md](docs/CI.md). Run `python
 
 Send an HTTPS URL to `POST /scrape`; receive JSON containing the rendered HTML, title, final URL, browser version, size, and timestamp. Each call opens a fresh browser session and closes it afterward. There is no LLM processing in this first version.
 
+## Azure portfolio deployment settings
+
+Before defining environment variables, **check the previous deployment values** in the repository-root `portfolio-deployment.local.json`:
+
+```powershell
+$previousDeployment = $null
+if (Test-Path -LiteralPath '.\portfolio-deployment.local.json') {
+    $previousDeployment = Get-Content -LiteralPath '.\portfolio-deployment.local.json' -Raw | ConvertFrom-Json
+    $previousDeployment | Select-Object status, recorded_at_utc
+    $previousDeployment.environment | Format-List
+} else {
+    Write-Host 'No local deployment record. For an existing deployment, inspect Terraform state before choosing names.'
+}
+```
+
+Reuse the recorded subscription, name and data region, including any compute-region override. After reviewing them, restore those four values into this PowerShell session:
+
+```powershell
+if ($previousDeployment) {
+    foreach ($entry in $previousDeployment.environment.PSObject.Properties) {
+        if ($entry.Name -in @('PRECO_SUBSCRIPTION_ID','PRECO_NAME','PRECO_LOCATION','PRECO_COMPUTE_LOCATION')) {
+            [Environment]::SetEnvironmentVariable($entry.Name, [string]$entry.Value, 'Process')
+        }
+    }
+}
+```
+
+When restoring existing settings, **skip subsequent subscription/name/location assignments** and enter only the email variables. The local file is Git-ignored and records only these four settings, never keys or email addresses. The script updates it after a successful plan, immediately before apply (`apply_started`), then marks it `apply_succeeded` when apply finishes. A failed/partial apply retains its attempted settings; success applies to that individual Terraform apply, not the entire deployment workflow. `imported_from_local_state` means values recovered from existing local state, without checking Azure. The record is informational: it is not loaded automatically and editing it does not bypass the state safeguard. `Validate`, `CheckSettings`, rejected settings and failed plans do not change it.
+
+Follow the [portfolio deployment guide](webapp/deploy/portfolio/README.md) for the remaining environment variables and deployment commands.
+
 ## Local start (Windows PowerShell)
 
 Install/start Docker Desktop with Linux containers and the WSL2 backend. Give Docker roughly 6 GB RAM for this stack. Host Chrome and your notebook virtual environment are not used by the containers.

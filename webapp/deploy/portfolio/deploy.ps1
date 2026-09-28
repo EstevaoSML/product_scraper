@@ -11,6 +11,7 @@ $scratch = Join-Path $repo '.ci-runtime/portfolio'
 $varsFile = Join-Path $infra 'portfolio.auto.tfvars.json'
 $outputsFile = Join-Path $scratch 'outputs.json'
 $identityFile = Join-Path $infra '.deployment-identity'
+$settingsFile = Join-Path $repo 'portfolio-deployment.local.json'
 function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Command failed: $Exe (exit $LASTEXITCODE)" }
@@ -99,6 +100,28 @@ function Confirm-DeploymentIdentity($Settings, [string]$Identity) {
         throw 'These environment settings target another deployment: PRECO_SUBSCRIPTION_ID or PRECO_NAME changed. State could not confirm a safe rebind; preserve the marker and state.'
     }
 }
+function Save-DeploymentSettings([string]$Status) {
+    # An explicit allowlist prevents credentials/emails from entering this record.
+    # This is a reminder of apply inputs, not proof of Azure resource existence.
+    $record = [ordered]@{
+        schema_version = 1
+        status = $Status
+        recorded_at_utc = (Get-Date).ToUniversalTime().ToString('o')
+        environment = [ordered]@{
+            PRECO_SUBSCRIPTION_ID = $settings.subscription_id
+            PRECO_NAME = $settings.name
+            PRECO_LOCATION = $settings.location
+            PRECO_COMPUTE_LOCATION = $settings.compute_location
+        }
+    }
+    $temporary = $settingsFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        Write-Utf8File $temporary ($record | ConvertTo-Json -Depth 4)
+        Move-Item -LiteralPath $temporary -Destination $settingsFile -Force
+    } finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    }
+}
 function Save-Variables($Values) {
     # Persist only rollout controls, never operator-provided settings.
     $controls = @{}
@@ -117,7 +140,9 @@ function Apply-Plan {
     Invoke-Checked $Terraform @("-chdir=$infra", 'plan', "-out=$plan")
     # This script is explicitly invoked for deployment. The saved plan is the
     # reviewed configuration; no hidden terraform destroy or resource migration.
+    Save-DeploymentSettings 'apply_started'
     Invoke-Checked $Terraform @("-chdir=$infra", 'apply', $plan)
+    Save-DeploymentSettings 'apply_succeeded'
     Save-Outputs
 }
 $savedEnvironment = @{}

@@ -179,7 +179,9 @@ def check_identity_uses_managed_state_without_mutating_it(tmp_path, scenario, su
     if scenario == 'remote':
         (infra / '.terraform').mkdir()
         (infra / '.terraform/terraform.tfstate').write_text('{"backend":{"type":"azurerm"}}')
-    before = state_file.read_bytes(), marker.read_bytes()
+    record = tmp_path / 'repo/portfolio-deployment.local.json'
+    record.write_text('{"preserve":true}')
+    before = state_file.read_bytes(), marker.read_bytes(), record.read_bytes()
     extra = "$env:PRECO_SUBSCRIPTION_ID = ' 11111111-1111-1111-1111-111111111111 '; $env:PRECO_NAME = ' fixture01 '" if scenario == 'spaces' else ''
     result = powershell(SETTINGS + extra + """
 function terraform { throw 'Terraform forbidden in settings check' }
@@ -188,4 +190,53 @@ function python { throw 'Packaging forbidden in settings check' }
 & '""" + str(script).replace("'", "''") + "' -Action CheckSettings\n")
     assert (result.returncode == 0) == success, result.stderr
     assert message in result.stdout + result.stderr
-    assert (state_file.read_bytes(), marker.read_bytes()) == before
+    assert (state_file.read_bytes(), marker.read_bytes(), record.read_bytes()) == before
+
+
+@pytest.mark.parametrize('shell', ['powershell', 'pwsh'])
+@pytest.mark.parametrize('failure', ['none', 'plan', 'apply'])
+@pytest.mark.parametrize('existing', [True, False])
+def check_apply_records_only_allowed_settings(tmp_path, shell, failure, existing):
+    executable = shutil.which(shell)
+    if not executable:
+        pytest.skip(shell + ' is not installed')
+    script = script_copy(tmp_path)
+    record = tmp_path / 'repo/portfolio-deployment.local.json'
+    if existing:
+        record.write_text('{"previous":true}')
+    command = SETTINGS.replace("Get-ChildItem Env:ARM_* | Remove-Item", "") + """
+$ErrorActionPreference = 'Stop'
+function terraform {
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'output') { return '{}' }
+    if ($args -contains 'FAILURE') { throw 'fixture-failure' }
+    if ($args -contains 'apply') {
+        $saved = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
+        if ($saved.status -ne 'apply_started') { throw 'Apply settings not recorded before mutation' }
+    }
+}
+function az { throw 'Azure forbidden' }
+. '__SCRIPT_PATH__' -Action Validate
+$settings = @{subscription_id=$env:PRECO_SUBSCRIPTION_ID; name=$env:PRECO_NAME;
+    location=$env:PRECO_LOCATION; compute_location=$env:PRECO_COMPUTE_LOCATION;
+    alert_email='private-canary@example.com'; api_key='secret-canary'}
+try { Apply-Plan } catch { if ($_.Exception.Message -ne 'fixture-failure') { throw } }
+Write-Output 'checked'
+""".replace('__SCRIPT_PATH__', str(script).replace("'", "''")).replace('FAILURE', failure)
+    encoded = base64.b64encode(command.encode('utf-16-le')).decode('ascii')
+    result = subprocess.run([executable, '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                            capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stderr.decode('utf-8', errors='replace')
+    if failure == 'plan' and not existing:
+        assert not record.exists()
+        return
+    saved = json.loads(record.read_text(encoding='utf-8'))
+    if failure == 'plan':
+        assert saved == {'previous': True}
+    else:
+        assert saved['status'] == ('apply_started' if failure == 'apply' else 'apply_succeeded')
+        assert saved['environment'] == dict(PRECO_SUBSCRIPTION_ID='11111111-1111-1111-1111-111111111111',
+            PRECO_NAME='fixture01', PRECO_LOCATION='eastus', PRECO_COMPUTE_LOCATION='eastus2')
+        assert 'canary' not in record.read_text()
+        assert saved['recorded_at_utc']
+    assert not list(record.parent.glob('portfolio-deployment.local.json.*.tmp'))
