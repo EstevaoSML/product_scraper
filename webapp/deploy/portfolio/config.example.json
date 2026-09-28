@@ -1,7 +1,0 @@
-{
-  "subscription_id": "YOUR-AZURE-SUBSCRIPTION-ID",
-  "name": "precoclarodemo01",
-  "location": "eastus",
-  "alert_email": "you@example.com",
-  "suggestion_email": "you@example.com"
-}

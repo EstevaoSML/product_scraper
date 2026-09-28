@@ -52,13 +52,26 @@ az account list --query "[].{name:name,id:id,state:state}" -o table
 
 python -m venv .venv-deploy
 .\.venv-deploy\Scripts\python.exe -m pip install -r webapp/requirements-deploy.txt
-Copy-Item webapp/deploy/portfolio/config.example.json webapp/deploy/portfolio/config.local.json
 ```
 
-Edit `config.local.json`: subscription ID, a **globally unique** 6–16 character lowercase name, region and real alert/suggestion email addresses. It contains no secrets and is git-ignored. East US is the default for this small demo; change it if required by subscription capacity or data-location preferences.
+Set the following **process environment variables in the same PowerShell window**. `Read-Host` keeps the entered values out of the command text saved in PowerShell history; no configuration file is needed. Do not paste the answers into a tracked script, your PowerShell profile or `.env` file.
 
 ```powershell
-# Local Terraform validation only; no login/config/OpenAI key needed.
+$env:PRECO_SUBSCRIPTION_ID = Read-Host 'Azure subscription ID from az account list'
+$env:PRECO_NAME = Read-Host 'Unique resource name (6-16 lowercase letters/digits)'
+$env:PRECO_ALERT_EMAIL = Read-Host 'Email for Azure cost alerts'
+$env:PRECO_LOCATION = 'eastus' # Optional; defaults to eastus
+$env:PRECO_SUGGESTION_EMAIL = Read-Host 'Public suggestion email (Enter to leave disabled)'
+```
+
+The first three variables are required for every cloud action. The last two are optional. Subscription IDs must be real UUIDs; placeholders are rejected before Azure CLI is called. Use the same subscription and resource name on subsequent runs. Re-enter these variables after opening a new PowerShell window. Suggestion email, when configured, is intentionally visible on the public website.
+
+The script forwards these settings to Terraform using temporary `TF_VAR_*` environment variables and restores any previous values when it exits, including on failure. Only rollout controls (job enabled, schedule enabled, package hash and budget start date) are written to the git-ignored generated `.auto.tfvars.json`. A hash of the subscription/name is saved in the git-ignored `terraform/.deployment-identity` beside the state to guard against accidentally targeting another deployment. Existing generated settings files are sanitized on the next cloud action after checking the subscription/name match. The old `config.local.json` is no longer read; you can remove your own copy if it is no longer needed.
+
+**Terraform plans, outputs and state still contain resource identifiers and configured email addresses.** Environment variables do not remove those values from Terraform's state. These artifacts are git-ignored and must not be force-added to Git. The OpenAI API key remains exclusively in Key Vault, provisioned with the existing hidden prompt.
+
+```powershell
+# Local Terraform validation only; no login/environment settings/OpenAI key needed.
 .\webapp\deploy\portfolio\deploy.ps1 -Action Validate
 
 # Creates only this new stack, uploads the private package and creates a manual job.
@@ -110,6 +123,8 @@ Availability and product identity remain conservative: prices require matching s
 
 ## Troubleshooting and cleanup
 
+If Terraform reports `Invalid start of value` with unexpected characters before `{` in `portfolio.auto.tfvars.json`, older script versions wrote a UTF-8 byte-order mark under Windows PowerShell 5.1. The current script writes BOM-free UTF-8 on both PowerShell 5.1 and 7 and repairs that generated file before invoking Terraform. Rerun the updated script; do not delete your Terraform state or change your deployment settings to resolve this encoding error.
+
 ```powershell
 terraform -chdir=webapp/deploy/portfolio/terraform output
 az containerapp job execution list -g rg-YOURNAME-portfolio -n job-YOURNAME-monthly -o table
@@ -119,3 +134,9 @@ az containerapp job execution show -g rg-YOURNAME-portfolio -n job-YOURNAME-mont
 If quota/region capacity prevents the job starting, select a supported region before deploying; do not add dedicated compute. If your subscription disallows budget creation, fix billing permissions instead of assuming an alert exists. For missing prices inspect the private monthly ledger and corresponding reports. To remove **this** demo, back up the data, disable scheduling, then deliberately execute `terraform -chdir=webapp/deploy/portfolio/terraform destroy`. That deletes its stored data and website; it is not part of the deploy script. Key Vault purge protection retains the deleted vault for its retention period.
 
 Suggested commit: `feat: add low-budget Azure portfolio deployment without ACR`.
+
+To clear the settings from the current PowerShell session after deployment:
+
+```powershell
+Remove-Item Env:PRECO_SUBSCRIPTION_ID, Env:PRECO_NAME, Env:PRECO_ALERT_EMAIL, Env:PRECO_LOCATION, Env:PRECO_SUGGESTION_EMAIL -ErrorAction SilentlyContinue
+```

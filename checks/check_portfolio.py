@@ -275,7 +275,7 @@ function terraform {
 }
 function az { throw 'Azure forbidden' }
 function python { throw 'Package build forbidden' }
-& '""" + script + "' -Action Validate -Config 'nonexistent-config.json'\n")
+& '""" + script + "' -Action Validate\n")
     assert result.returncode == 0, result.stderr
     assert 'validate' in result.stdout
 

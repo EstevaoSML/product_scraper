@@ -24,6 +24,7 @@ logs/
 *.tfplan
 *.tfvars
 *.tfvars.json
+.deployment-identity
 outputs
 backend.hcl
 crash.log
