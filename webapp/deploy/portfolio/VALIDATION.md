@@ -2,6 +2,8 @@
 
 ## Completed locally
 
+- 2026-09-28 capacity workaround: added PRECO_COMPUTE_LOCATION for only the Container Apps environment/job. All 404 Python checks and five Terraform mock plans passed. The alternate-region plan checks both compute resources move while Storage, Key Vault, identity and resource-group locations remain unchanged; the default preserves existing names/locations. No Azure apply or alternate-region capacity test was performed. Reuse the chosen override in later sessions.
+
 - 2026-09-28: explicit registration added for the six Azure namespaces required by the portfolio setup. Terraform validate and all four mock plans passed; a regression check prevents relying solely on default registration. No live registration, plan or apply was run for this fix. The user reported a partial real deployment; preserve its state when resuming.
 
 - Subscription preflight: four mocked cases cover an accessible subscription, stale CLI cache with ARM rejection, a disabled subscription, and competing Terraform credentials. No Azure writes or deployment retries were performed. This check improves diagnosis; it does not establish why the user's live subscription returned 404.

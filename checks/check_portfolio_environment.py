@@ -22,6 +22,7 @@ $env:PRECO_SUBSCRIPTION_ID = '11111111-1111-1111-1111-111111111111'
 $env:PRECO_NAME = 'fixture01'
 $env:PRECO_ALERT_EMAIL = 'operator@example.com'
 $env:PRECO_LOCATION = 'eastus'
+$env:PRECO_COMPUTE_LOCATION = 'eastus2'
 $env:PRECO_SUGGESTION_EMAIL = ''
 """
 
@@ -52,6 +53,8 @@ $env:TF_VAR_alert_email = 'previous-email'
 function terraform {
     if ($env:TF_VAR_subscription_id -ne $env:PRECO_SUBSCRIPTION_ID) { throw 'Subscription forwarding failed' }
     if ($env:TF_VAR_alert_email -ne $env:PRECO_ALERT_EMAIL) { throw 'Email forwarding failed' }
+    if ($env:TF_VAR_compute_location -ne 'eastus2') { throw 'Compute region forwarding failed' }
+    if ($env:TF_VAR_location -ne 'eastus') { throw 'Data region changed' }
     if ($args -contains 'apply') { throw 'No real deployment allowed' }
     $global:LASTEXITCODE = 0
 }

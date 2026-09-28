@@ -86,6 +86,7 @@ try {
             subscription_id = $env:PRECO_SUBSCRIPTION_ID
             name = $env:PRECO_NAME
             location = $(if ($env:PRECO_LOCATION) { $env:PRECO_LOCATION } else { 'eastus' })
+            compute_location = $(if ($env:PRECO_COMPUTE_LOCATION) { $env:PRECO_COMPUTE_LOCATION } else { '' })
             alert_email = $env:PRECO_ALERT_EMAIL
             suggestion_email = $(if ($env:PRECO_SUGGESTION_EMAIL) { $env:PRECO_SUGGESTION_EMAIL } else { '' })
         }

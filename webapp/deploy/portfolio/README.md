@@ -60,11 +60,12 @@ Set the following **process environment variables in the same PowerShell window*
 $env:PRECO_SUBSCRIPTION_ID = Read-Host 'Azure subscription ID from az account list'
 $env:PRECO_NAME = Read-Host 'Unique resource name (6-16 lowercase letters/digits)'
 $env:PRECO_ALERT_EMAIL = Read-Host 'Email for Azure cost alerts'
-$env:PRECO_LOCATION = 'eastus' # Optional; defaults to eastus
+$env:PRECO_LOCATION = 'eastus' # Data/resource-group region; keep unchanged after deployment
+$env:PRECO_COMPUTE_LOCATION = '' # Optional: default uses PRECO_LOCATION
 $env:PRECO_SUGGESTION_EMAIL = Read-Host 'Public suggestion email (Enter to leave disabled)'
 ```
 
-The first three variables are required for every cloud action. The last two are optional. Subscription IDs must be real UUIDs; placeholders are rejected before Azure CLI is called. Use the same subscription and resource name on subsequent runs. Re-enter these variables after opening a new PowerShell window. Suggestion email, when configured, is intentionally visible on the public website.
+The first three variables are required for every cloud action. Location, compute location and suggestion email are optional. Subscription IDs must be real UUIDs; placeholders are rejected before Azure CLI is called. Use the same subscription and resource name on subsequent runs. Re-enter these variables after opening a new PowerShell window. Suggestion email, when configured, is intentionally visible on the public website.
 
 The script forwards these settings to Terraform using temporary `TF_VAR_*` environment variables and restores any previous values when it exits, including on failure. Only rollout controls (job enabled, schedule enabled, package hash and budget start date) are written to the git-ignored generated `.auto.tfvars.json`. A hash of the subscription/name is saved in the git-ignored `terraform/.deployment-identity` beside the state to guard against accidentally targeting another deployment. Existing generated settings files are sanitized on the next cloud action after checking the subscription/name match. The old `config.local.json` is no longer read; you can remove your own copy if it is no longer needed.
 
@@ -123,6 +124,19 @@ Availability and product identity remain conservative: prices require matching s
 
 ## Troubleshooting and cleanup
 
+For `ManagedEnvironmentCapacityHeavyUsageError` / `AKSCapacityHeavyUsage`, Azure lacks capacity for a new managed environment in that region. The reference to AKS concerns the Container Apps platform; this project does not create your own AKS cluster. You can retry later or try a different **compute** region:
+
+```powershell
+# Keep PRECO_LOCATION at the region where your data services already exist.
+$env:PRECO_COMPUTE_LOCATION = 'eastus2'
+.\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
+```
+
+`eastus2` is an alternative to try, not a capacity guarantee. This option changes only the Container Apps environment/job location and uses a region suffix on the alternate environment name, avoiding a name collision with the failed original environment. It preserves the Storage, Key Vault, identity and resource-group locations. Re-enter the **same compute override in subsequent PowerShell sessions**, including before enabling/disabling scheduling; clearing it returns the desired compute location to the default. Changing regions can replace existing compute resources. Cross-region Storage traffic can incur transfer charges; the small monthly package/data volume limits expected impact but it is not a hard cost cap.
+
+Do not change `PRECO_LOCATION`, delete Terraform state or clear the identity marker as a workaround. An original failed environment might still exist in Azure if Terraform did not record it. The script does not delete untracked resources; inspect the original environment in the portal after the alternate deployment succeeds before deciding whether to remove it. [Microsoft capacity troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/azure/azure-kubernetes/error-codes/akscapacityheavyusage-error).
+
+
 For `MissingSubscriptionRegistration`, the current configuration explicitly registers the required namespaces instead of relying on the AzureRM default set. Rerun the updated Deploy command with the **same state and settings**; it creates a fresh plan and resumes resources not yet created. Do not apply the old saved plan, delete state, or clear the identity marker after a partial deployment. If registration is denied, a subscription administrator must grant the registration permission or register the namespaces first. See [Azure resource-provider registration](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types).
 
 
@@ -155,5 +169,5 @@ Suggested commit: `feat: add low-budget Azure portfolio deployment without ACR`.
 To clear the settings from the current PowerShell session after deployment:
 
 ```powershell
-Remove-Item Env:PRECO_SUBSCRIPTION_ID, Env:PRECO_NAME, Env:PRECO_ALERT_EMAIL, Env:PRECO_LOCATION, Env:PRECO_SUGGESTION_EMAIL -ErrorAction SilentlyContinue
+Remove-Item Env:PRECO_SUBSCRIPTION_ID, Env:PRECO_NAME, Env:PRECO_ALERT_EMAIL, Env:PRECO_LOCATION, Env:PRECO_COMPUTE_LOCATION, Env:PRECO_SUGGESTION_EMAIL -ErrorAction SilentlyContinue
 ```

@@ -10,6 +10,15 @@ variable "location" {
   type    = string
   default = "eastus"
 }
+variable "compute_location" {
+  description = "Optional Container Apps region override. Storage, Key Vault and identity remain in location."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.compute_location == "" || can(regex("^[a-z][a-z0-9]+$", var.compute_location))
+    error_message = "Use an Azure region code such as eastus2, or leave empty to use location."
+  }
+}
 variable "deploy_job" {
   type    = bool
   default = false

@@ -15,6 +15,10 @@ variables {
 run "foundation" {
   command = plan
   assert {
+    condition     = azurerm_container_app_environment.jobs.location == var.location && azurerm_container_app_environment.jobs.name == "cae-${var.name}"
+    error_message = "Existing deployment location and name must remain unchanged without an override."
+  }
+  assert {
     condition     = length(azurerm_container_app_job.monthly) == 0
     error_message = "Do not start a job before its private package is uploaded."
   }
@@ -25,6 +29,23 @@ run "foundation" {
   assert {
     condition     = alltrue([for c in azurerm_storage_container.private : c.container_access_type == "private"])
     error_message = "Packages and raw reports cannot be public containers."
+  }
+}
+run "independent_compute_region" {
+  command = plan
+  variables {
+    location         = "eastus"
+    compute_location = "eastus2"
+    deploy_job       = true
+    package_sha256   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition     = azurerm_container_app_environment.jobs.location == "eastus2" && azurerm_container_app_job.monthly[0].location == "eastus2" && azurerm_container_app_environment.jobs.name == "cae-${var.name}-eastus2"
+    error_message = "Override must move both compute resources and avoid the failed environment name."
+  }
+  assert {
+    condition     = azurerm_storage_account.data.location == "eastus" && azurerm_key_vault.secrets.location == "eastus" && azurerm_user_assigned_identity.job.location == "eastus" && azurerm_resource_group.portfolio.location == "eastus"
+    error_message = "A capacity workaround must not move or replace durable resources."
   }
 }
 run "manual_first_test" {

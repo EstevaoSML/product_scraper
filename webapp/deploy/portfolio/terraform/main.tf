@@ -27,6 +27,10 @@ provider "azurerm" {
 }
 data "azurerm_client_config" "operator" {}
 
+locals {
+  compute_location = var.compute_location != "" ? var.compute_location : var.location
+}
+
 resource "azurerm_resource_group" "portfolio" {
   name     = "rg-${var.name}-portfolio"
   location = var.location
@@ -132,8 +136,10 @@ resource "azurerm_role_assignment" "job_secret" {
   principal_id         = azurerm_user_assigned_identity.job.principal_id
 }
 resource "azurerm_container_app_environment" "jobs" {
-  name                = "cae-${var.name}"
-  location            = var.location
+  # A distinct name avoids colliding with an untracked failed environment in
+  # the original region. Default names remain unchanged for existing deployments.
+  name                = local.compute_location == var.location ? "cae-${var.name}" : "cae-${var.name}-${local.compute_location}"
+  location            = local.compute_location
   resource_group_name = azurerm_resource_group.portfolio.name
   # Azure Monitor destination, with NO diagnostic setting or Log Analytics
   # workspace: no paid log ingestion sink is configured.
@@ -146,7 +152,7 @@ resource "azurerm_container_app_environment" "jobs" {
 resource "azurerm_container_app_job" "monthly" {
   count                        = var.deploy_job ? 1 : 0
   name                         = "job-${var.name}-monthly"
-  location                     = var.location
+  location                     = local.compute_location
   resource_group_name          = azurerm_resource_group.portfolio.name
   container_app_environment_id = azurerm_container_app_environment.jobs.id
   workload_profile_name        = "Consumption"
