@@ -132,6 +132,12 @@ def check_static_export_retains_search_and_averages_without_private_data(tmp_pat
     assert '<script>alert(1)</script>' not in page
     assert 'Content-Security-Policy' in page
     assert any(k.endswith('app.js') for k in files)
+    translation_asset = next(k for k in files if k.endswith('/i18n.js'))
+    assert '/' + translation_asset in page
+    assert page.index('/i18n.js') < page.index('/app.js')
+    assert page.count('data-product="p"') == 4
+    assert 'aria-haspopup="dialog"' in page
+    assert all(f'value="{lang}"' in page for lang in ('pt-BR','en','es'))
     assert state == original
 
 

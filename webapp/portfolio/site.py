@@ -26,7 +26,7 @@ def render_site(state, read_image, email=''):
             item['image'] = '/' + key
     # Hash assets so index.html is committed last without mixed JS/CSS releases.
     assets = {}
-    for name in ('app.js', 'style.css'):
+    for name in ('i18n.js', 'app.js', 'style.css'):
         data = (ROOT / 'static' / name).read_bytes()
         key = 'assets/' + hashlib.sha256(data).hexdigest() + '/' + name
         assets[name] = '/' + key
