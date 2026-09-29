@@ -2,7 +2,7 @@
 
 ## What runs now
 
-GitHub Actions is configured in `.github/workflows/ci.yml` for pushes, pull requests and manual runs. No Git remote is configured yet, so the workflow has not run on GitHub. Push this repository to GitHub and enable Actions to activate it. No cloud credentials or LLM keys are required. CI does not deploy anything.
+GitHub Actions CI runs in `.github/workflows/ci.yml` for pushes, pull requests, manual runs and calls from the release workflow. It requires no Azure credentials or LLM keys. `.github/workflows/portfolio-deploy.yml` is a separate manual default-branch release: it gates deployment on CI, uses the protected `portfolio-production` environment and Azure OIDC, applies the existing low-budget portfolio Terraform state, and runs smoke/publication in Azure. Follow [GitHub setup and migration](../deploy/github/README.md) before enabling releases. These workflows have not yet been verified in a live GitHub run.
 
 | Job | Actual checks | Failure behavior |
 |---|---|---|

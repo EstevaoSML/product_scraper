@@ -6,6 +6,12 @@ The default deployment is `webapp/deploy/portfolio`: Azure Storage static websit
 
 The previous infrastructure instructions are preserved in [REDME.legacy.md](REDME.legacy.md). Use the steps below for this portfolio; no `backend.hcl` or `terraform.tfvars` needs to be copied from the legacy stack.
 
+## GitHub CI/CD (recommended after the first deployment)
+
+Use [the GitHub setup and migration guide](deploy/github/README.md) to connect this repository to Azure with OIDC, move the existing portfolio Terraform state into private Azure Storage, and release through **Actions → Portfolio deployment**. The workflow runs CI, updates the Azure job package with Terraform, and validates/publishes the site in Azure. It creates no ACR and keeps OpenAI secrets in Key Vault. Azure DevOps is now legacy; the same guide lists the old CI resources that can be removed without deleting the app or its data.
+
+The following workstation steps remain the initial deployment and manual recovery path.
+
 ## 1. Prepare your workstation and Azure login
 
 Use PowerShell with Python 3.12+, Terraform 1.10+ and Azure CLI with Container Apps commands installed. You need an active Azure subscription and permission to create resources, assign roles, register resource providers and create cost budgets. A tenant-only login is insufficient.

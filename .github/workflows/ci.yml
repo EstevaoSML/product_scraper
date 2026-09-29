@@ -3,6 +3,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
@@ -21,16 +22,20 @@ jobs:
           persist-credentials: false
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.13.5'
+          terraform_version: '1.14.7'
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate
       - run: terraform test -test-directory=verification -no-color
       - run: |
-          terraform -chdir=../azure-devops fmt -check -recursive
-          terraform -chdir=../azure-devops init -backend=false -input=false
-          terraform -chdir=../azure-devops validate
-          terraform -chdir=../azure-devops test -test-directory=verification -no-color
+          terraform -chdir=../../webapp/deploy/portfolio/terraform fmt -check -recursive
+          terraform -chdir=../../webapp/deploy/portfolio/terraform init -backend=false -input=false
+          terraform -chdir=../../webapp/deploy/portfolio/terraform validate
+          terraform -chdir=../../webapp/deploy/portfolio/terraform test -test-directory=verification -no-color
+          cp ../../portfolio-deployment.example.json ../../portfolio-deployment.local.json
+          terraform -chdir=../github fmt -check -recursive
+          terraform -chdir=../github init -backend=false -input=false
+          terraform -chdir=../github validate
   unit-security:
     runs-on: ubuntu-latest
     timeout-minutes: 10

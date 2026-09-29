@@ -16,14 +16,14 @@ provider "azurerm" {
   # Explicit registration supports new subscriptions without depending on the
   # provider version's default registration set. AzureRM waits during configure.
   resource_provider_registrations = "none"
-  resource_providers_to_register = [
+  resource_providers_to_register = var.register_resource_providers ? [
     "Microsoft.App",
     "Microsoft.Consumption",
     "Microsoft.KeyVault",
     "Microsoft.ManagedIdentity",
     "Microsoft.OperationalInsights",
     "Microsoft.Storage",
-  ]
+  ] : []
 }
 data "azurerm_client_config" "operator" {}
 
@@ -53,7 +53,7 @@ resource "azurerm_storage_account" "data" {
 resource "azurerm_role_assignment" "operator_data" {
   scope                = azurerm_storage_account.data.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_client_config.operator.object_id
+  principal_id         = var.operator_object_id != "" ? var.operator_object_id : data.azurerm_client_config.operator.object_id
 }
 resource "azurerm_storage_container" "private" {
   for_each              = toset(["catalog", "packages"])
@@ -137,7 +137,7 @@ resource "azurerm_key_vault" "secrets" {
 resource "azurerm_role_assignment" "operator_secrets" {
   scope                = azurerm_key_vault.secrets.id
   role_definition_name = "Key Vault Secrets Officer"
-  principal_id         = data.azurerm_client_config.operator.object_id
+  principal_id         = var.operator_object_id != "" ? var.operator_object_id : data.azurerm_client_config.operator.object_id
 }
 resource "azurerm_role_assignment" "job_secret" {
   # Dedicated portfolio vault; its only persistent runtime secret is OpenAI.

@@ -7,18 +7,18 @@ mock_provider "azurerm" {
   }
 }
 variables {
-  deploy_job = false
+  deploy_job              = false
   enable_monthly_schedule = false
-  package_sha256 = ""
-  subscription_id   = "11111111-1111-1111-1111-111111111111"
-  name              = "pricefixture01"
-  alert_email       = "operator@example.com"
-  budget_start_date = "2026-09-01T00:00:00Z"
+  package_sha256          = ""
+  subscription_id         = "11111111-1111-1111-1111-111111111111"
+  name                    = "pricefixture01"
+  alert_email             = "operator@example.com"
+  budget_start_date       = "2026-09-01T00:00:00Z"
 }
 run "foundation" {
   command = plan
   assert {
-    condition = one([for rule in azurerm_storage_management_policy.retention.rule : rule.actions[0].base_blob[0].delete_after_days_since_modification_greater_than if rule.name == "expire-job-diagnostics"]) == 30
+    condition     = one([for rule in azurerm_storage_management_policy.retention.rule : rule.actions[0].base_blob[0].delete_after_days_since_modification_greater_than if rule.name == "expire-job-diagnostics"]) == 30
     error_message = "Private job diagnostics must expire after 30 days."
   }
   assert {
@@ -90,4 +90,16 @@ run "reject_unbuilt_package" {
   command = plan
   variables { deploy_job = true }
   expect_failures = [azurerm_container_app_job.monthly]
+}
+
+run "github_preserves_operator" {
+  command = plan
+  variables {
+    operator_object_id          = "44444444-4444-4444-4444-444444444444"
+    register_resource_providers = false
+  }
+  assert {
+    condition     = azurerm_role_assignment.operator_data.principal_id == var.operator_object_id && azurerm_role_assignment.operator_secrets.principal_id == var.operator_object_id
+    error_message = "CI must preserve the existing human storage and Key Vault roles."
+  }
 }
