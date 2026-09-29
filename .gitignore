@@ -23,9 +23,16 @@ logs/
 *.tfstate.*
 *.tfplan
 *.tfvars
+*.tfvars.json
+.deployment-identity
 outputs
 backend.hcl
 crash.log
 !deploy/terraform/verification/*.tftest.hcl
 
 !deploy/azure-devops/verification/*.tftest.hcl
+!webapp/deploy/portfolio/terraform/verification/*.tftest.hcl
+
+# Local deployment settings and write temporary files
+/portfolio-deployment.local.json
+/portfolio-deployment.local.json.*.tmp

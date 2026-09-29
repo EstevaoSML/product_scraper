@@ -24,7 +24,12 @@ def create_driver(directory):
     # UC patches this private, writable copy. No runtime download or shared binary race.
     driver_path = str(Path(directory) / "chromedriver")
     shutil.copy2(os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"), driver_path)
-    return uc.Chrome(options=options, version_main=152,
+    # The portfolio package supplies a matching Chrome/driver pair. Existing
+    # Docker images retain their pinned default; arbitrary arguments are rejected.
+    major = os.getenv("CHROME_MAJOR", "152")
+    if not major.isascii() or not major.isdigit() or not 100 <= int(major) <= 999:
+        raise ValueError("Invalid Chrome major version")
+    return uc.Chrome(options=options, version_main=int(major),
                      driver_executable_path=driver_path,
                      browser_executable_path=os.getenv("CHROME_BINARY", "/usr/bin/google-chrome"),
                      user_data_dir=str(Path(directory) / "profile"), use_subprocess=True)

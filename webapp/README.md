@@ -1,5 +1,7 @@
 # Preço Claro
 
+**Deploy econômico para portfólio, sem ACR:** use [deploy/portfolio/README.md](deploy/portfolio/README.md). Ele mantém dados privados no ADLS, publica o site estático no Azure e executa um job mensal para dez produtos em quatro varejistas. A infraestrutura completa anterior continua disponível separadamente.
+
 Aplicativo Flask de histórico de preços, integrado ao repositório `web_scraping`. A pasta `webapp` é a versão principal do aplicativo. O pacote `app` na raiz continua sendo o scraper/agente; não foi substituído.
 
 ## Executar localmente

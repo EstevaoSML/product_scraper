@@ -1,5 +1,7 @@
 # Implantação Azure
 
+**Para o novo teste de baixo custo sem ACR, use [portfolio/README.md](portfolio/README.md) e `portfolio/deploy.ps1`.** O roteiro abaixo é a alternativa anterior, com custos fixos maiores. Não misture os estados Terraform das duas stacks.
+
 Este pacote provisiona o site Flask, o scraper MCP e seu navegador, os jobs de seed/coleta e o armazenamento. Use um nome novo para esta stack: o Terraform antigo em `../../deploy/terraform` continua separado. Não aplique os dois estados sobre os mesmos recursos.
 
 ## Pré-requisitos

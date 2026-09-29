@@ -1,0 +1,8 @@
+{
+  "subscription_id": "YOUR-AZURE-SUBSCRIPTION-ID",
+  "name": "yourname",
+  "location": "eastus",
+  "compute_location": "",
+  "alert_email": "you@example.com",
+  "suggestion_email": ""
+}
