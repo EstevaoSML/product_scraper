@@ -108,3 +108,12 @@ Next local check: start Docker Desktop with Linux containers, run `docker compos
 - GitHub workflow YAML parses successfully. Bootstrap provider initialization succeeded; no bootstrap plan/apply or live GitHub Actions run was executed.
 - No Azure resources deleted or deployed, no code pushed, no paid model calls made. Remote state migration, GitHub environment/OIDC configuration and live smoke validation remain operator setup steps.
 - Docker/browser dependencies were unchanged. The existing CI container checks remain required on GitHub; no new local Docker validation is claimed.
+
+
+## Expanded monthly collection — 2026-09-29
+
+- 456 Python checks passed with 92.43% combined app coverage; one existing dependency warning. The QA runner used the existing Windows sandbox scratch-directory ACL workaround.
+- Six Terraform mock plans passed; AzureRM validation and formatting passed. Checks include 150 tasks, monthly schedule, 24-hour execution timeout, and the 20 billing-currency-unit Azure alert.
+- Added regression checks for preservation of the original ten IDs/history, three-retailer selection, legacy September reservations, image reuse and 50-image ceiling, durable reservations before image calls, lost-lease behavior, and rejection of backdated collection months in Python and PowerShell.
+- Docker integration attempted and blocked because the Docker Desktop Linux engine pipe is absent. No live browser, Azure apply, image generation or retailer research was run during implementation.
+- Deploy the new package and run Azure Smoke before the documented September CollectMonthly command. Live model accuracy, retailer availability and billed costs are not established by these local tests.

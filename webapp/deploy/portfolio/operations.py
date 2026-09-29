@@ -1,5 +1,6 @@
 """Operator-only uploads/secret provisioning/execution; never runs the model locally."""
 import argparse
+from datetime import datetime, timezone
 import getpass
 import hashlib
 import json
@@ -33,9 +34,11 @@ def cli(*args):
     return json.loads(result.stdout or '{}')
 
 
-def start_template(job, mode, limit):
-    if mode not in ('smoke', 'publish', 'collect') or not 1 <= limit <= 40:
+def start_template(job, mode, limit, month=None):
+    if mode not in ('smoke', 'publish', 'collect') or not 1 <= limit <= 150:
         raise ValueError('Invalid execution override')
+    if month and (mode != 'collect' or month != datetime.now(timezone.utc).strftime('%Y-%m')):
+        raise OperatorError('Use the current UTC month only; live prices cannot be backdated.')
     template = job.get('properties', job)['template']
     containers = template['containers']
     if len(containers) != 1 or containers[0]['name'] != 'portfolio':
@@ -44,6 +47,9 @@ def start_template(job, mode, limit):
     for name, value in {'RUN_MODE': mode, 'MAX_TASKS': str(limit)}.items():
         env[:] = [entry for entry in env if entry['name'] != name]
         env.append(dict(name=name, value=value))
+    env[:] = [entry for entry in env if entry['name'] != 'COLLECTION_MONTH']
+    if mode == 'collect':
+        env.append(dict(name='COLLECTION_MONTH', value=month or datetime.now(timezone.utc).strftime('%Y-%m')))
     return template
 
 
@@ -103,7 +109,7 @@ def main(args):
                         raise ValueError('Provision an enabled OpenAI secret first')
         if args.action == 'start':
             job = cli('containerapp', 'job', 'show', '-g', get('resource_group'), '-n', get('job_name'))
-            template = start_template(job, args.mode, args.limit)
+            template = start_template(job, args.mode, args.limit, getattr(args, 'month', None))
             run_id = uuid.uuid4().hex
             env = template['containers'][0]['env']
             env[:] = [entry for entry in env if entry['name'] != 'PORTFOLIO_DIAGNOSTIC_ID']
@@ -118,7 +124,7 @@ def main(args):
                              '-n', get('job_name'), '--yaml', str(path))
             name = result['name']
             print('Azure execution started: ' + name, flush=True)
-            deadline = time.monotonic() + 15000
+            deadline = time.monotonic() + 87000
             while time.monotonic() < deadline:
                 execution = cli('containerapp', 'job', 'execution', 'show', '-g', get('resource_group'),
                                 '-n', get('job_name'), '--job-execution-name', name)
@@ -137,7 +143,8 @@ if __name__ == '__main__':
     parser.add_argument('--outputs', type=Path)
     parser.add_argument('--package', type=Path)
     parser.add_argument('--mode', choices=['smoke', 'publish', 'collect'], default='smoke')
-    parser.add_argument('--limit', type=int, default=40)
+    parser.add_argument('--limit', type=int, default=150)
+    parser.add_argument('--month', help='Current UTC month YYYY-MM; collect only')
     try:
         main(parser.parse_args())
     except OperatorError as exc:

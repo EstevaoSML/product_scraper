@@ -167,7 +167,7 @@ resource "azurerm_container_app_job" "monthly" {
   resource_group_name          = azurerm_resource_group.portfolio.name
   container_app_environment_id = azurerm_container_app_environment.jobs.id
   workload_profile_name        = "Consumption"
-  replica_timeout_in_seconds   = 14400
+  replica_timeout_in_seconds   = 86400
   replica_retry_limit          = 0
   identity {
     type         = "UserAssigned"
@@ -203,7 +203,7 @@ resource "azurerm_container_app_job" "monthly" {
           KEY_VAULT_NAME          = azurerm_key_vault.secrets.name
           PACKAGE_SHA256          = var.package_sha256
           RUN_MODE                = var.enable_monthly_schedule ? "collect" : "smoke"
-          MAX_TASKS               = "40"
+          MAX_TASKS               = "150"
           SUGGESTION_EMAIL        = var.suggestion_email
         }
         content {
@@ -224,7 +224,7 @@ resource "azurerm_container_app_job" "monthly" {
 resource "azurerm_consumption_budget_resource_group" "alert" {
   name              = "portfolio-monthly"
   resource_group_id = azurerm_resource_group.portfolio.id
-  amount            = 8
+  amount            = 20
   time_grain        = "Monthly"
   time_period {
     start_date = var.budget_start_date

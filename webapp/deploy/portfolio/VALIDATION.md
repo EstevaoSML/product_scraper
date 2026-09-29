@@ -51,3 +51,12 @@ Added best-effort stage/status records to catalog/executions/diagnostics with pe
 ## Azure venv_create failure compatibility fix
 
 The reported diagnostic confirms environment creation failed after extraction, but does not contain the exact subprocess stderr. Changed bootstrap to the virtualenv bundled by the versioned Microsoft Playwright Python Noble image, using offline seeding and disabling periodic updates. 426 Python tests passed, including environment command/failure propagation checks; app branch coverage remains 92.43%. Terraform validate passed. Docker integration attempted and blocked by the unavailable Linux engine. No Azure apply or Smoke executed; real runtime confirmation is pending.
+
+
+## Expanded monthly collection — 2026-09-29
+
+- 456 Python checks passed with 92.43% combined app coverage; one existing dependency warning. The QA runner used the existing Windows sandbox scratch-directory ACL workaround.
+- Six Terraform mock plans passed; AzureRM validation and formatting passed. Checks include 150 tasks, monthly schedule, 24-hour execution timeout, and the 20 billing-currency-unit Azure alert.
+- Added regression checks for preservation of the original ten IDs/history, three-retailer selection, legacy September reservations, image reuse and 50-image ceiling, durable reservations before image calls, lost-lease behavior, and rejection of backdated collection months in Python and PowerShell.
+- Docker integration attempted and blocked because the Docker Desktop Linux engine pipe is absent. No live browser, Azure apply, image generation or retailer research was run during implementation.
+- Deploy the new package and run Azure Smoke before the documented September CollectMonthly command. Live model accuracy, retailer availability and billed costs are not established by these local tests.

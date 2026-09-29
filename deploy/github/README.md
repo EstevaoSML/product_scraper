@@ -39,7 +39,7 @@ terraform -chdir=deploy/github output
 
 Requires an operator allowed to assign roles and create the identity resource group, plus existing Blob Data Contributor access. Preserve a private backup of `deploy/github/terraform.tfstate`: this is a separate bootstrap state, never the application state. Neither state is committed.
 
-Bootstrap adds only a resource group, managed identity, federated credential, two role assignments and a private `github-tfstate` container in your existing storage account. It adds no ACR, VM or Log Analytics. Storage state operations and GitHub Actions usage can incur usage charges; they are not a guaranteed fixed $10 cap.
+Bootstrap adds only a resource group, managed identity, federated credential, two role assignments and a private `github-tfstate` container in your existing storage account. It adds no ACR, VM or Log Analytics. Storage state operations and GitHub Actions usage can incur usage charges; they are not a guaranteed fixed $20 cap.
 
 ## 2. Migrate the EXISTING app state (do not skip)
 
@@ -121,3 +121,5 @@ Do not run destroy in `deploy/terraform` or `webapp/deploy/portfolio/terraform`.
 
 References: [GitHub OIDC with Azure](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-azure), [Terraform Azure backend](https://developer.hashicorp.com/terraform/language/backend/azurerm).
 
+
+For 50 products, reusable images and the September manual trigger, see [monthly collection](../../webapp/deploy/portfolio/MONTHLY.md).

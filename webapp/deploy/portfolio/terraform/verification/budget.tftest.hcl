@@ -62,7 +62,7 @@ run "manual_first_test" {
     package_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
   assert {
-    condition     = azurerm_container_app_job.monthly[0].replica_retry_limit == 0 && azurerm_container_app_job.monthly[0].replica_timeout_in_seconds == 14400 && length(azurerm_container_app_job.monthly[0].manual_trigger_config) == 1
+    condition     = azurerm_container_app_job.monthly[0].replica_retry_limit == 0 && azurerm_container_app_job.monthly[0].replica_timeout_in_seconds == 86400 && length(azurerm_container_app_job.monthly[0].manual_trigger_config) == 1
     error_message = "The first deployment must be manual, with no paid retry and bounded compute."
   }
   assert {
@@ -80,6 +80,10 @@ run "monthly_only" {
     deploy_job              = true
     enable_monthly_schedule = true
     package_sha256          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition     = one([for env in azurerm_container_app_job.monthly[0].template[0].container[0].env : env.value if env.name == "MAX_TASKS"]) == "150" && azurerm_consumption_budget_resource_group.alert.amount == 20
+    error_message = "The expanded workload must allow 150 searches and use the updated budget alert."
   }
   assert {
     condition     = azurerm_container_app_job.monthly[0].schedule_trigger_config[0].cron_expression == "0 9 1 * *" && azurerm_container_app_job.monthly[0].schedule_trigger_config[0].parallelism == 1
