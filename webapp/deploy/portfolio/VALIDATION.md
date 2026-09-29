@@ -47,3 +47,7 @@ Added the missing azure-storage-blob==12.30.2 operator dependency and an import-
 ## Private durable diagnostics
 
 Added best-effort stage/status records to catalog/executions/diagnostics with per-run IDs and 30-day lifecycle expiry. The existing MI authenticates each bounded write; exception messages, subprocess output and secrets are excluded. 424 Python checks passed with 92.43% app coverage; Terraform validate and all five mocked plans passed. Tests cover redaction, path injection, unavailable storage and retention. Mock test rollout defaults now explicitly override local generated deployment controls. Docker integration was attempted and blocked by the unavailable Linux engine. No Azure apply or new Smoke run was executed; the prior failure cause remains unknown. Platform failures before Python/identity/storage readiness cannot be persisted by this mechanism.
+
+## Azure venv_create failure compatibility fix
+
+The reported diagnostic confirms environment creation failed after extraction, but does not contain the exact subprocess stderr. Changed bootstrap to the virtualenv bundled by the versioned Microsoft Playwright Python Noble image, using offline seeding and disabling periodic updates. 426 Python tests passed, including environment command/failure propagation checks; app branch coverage remains 92.43%. Terraform validate passed. Docker integration attempted and blocked by the unavailable Linux engine. No Azure apply or Smoke executed; real runtime confirmation is pending.

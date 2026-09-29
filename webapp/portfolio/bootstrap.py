@@ -116,6 +116,16 @@ def diagnostic(stage, error=None):
         print('diagnostic_storage_unavailable', flush=True)
 
 
+def create_environment(directory):
+    # Playwright Python Noble ships virtualenv and uses it in its own build.
+    # Ubuntu's stdlib venv can fail when optional ensurepip is absent.
+    diagnostic('venv_create')
+    subprocess.run([sys.executable, '-m', 'virtualenv', '--no-download',
+                    '--no-periodic-update', str(directory / 'venv')],
+                   check=True, timeout=90)
+    return str(directory / 'venv/bin/python')
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix='portfolio-') as scratch:
         directory = Path(scratch)
@@ -131,9 +141,7 @@ def main():
             safe_extract(root / 'browser' / (name + '.zip'), root / 'browser')
         # A venv avoids changing the public MCR base. Dependencies are pinned by
         # the existing constraints plus the portfolio requirements.
-        diagnostic('venv_create')
-        subprocess.run([sys.executable, '-m', 'venv', str(directory / 'venv')], check=True, timeout=90)
-        python = str(directory / 'venv/bin/python')
+        python = create_environment(directory)
         diagnostic('dependency_install')
         subprocess.run([python, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-cache-dir',
                         '-r', 'webapp/portfolio/requirements.txt'], cwd=root, check=True, timeout=600,

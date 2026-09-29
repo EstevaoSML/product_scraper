@@ -355,3 +355,28 @@ def check_diagnostics_reject_path_injection_before_network(monkeypatch):
     access.assert_not_called()
     with pytest.raises(ValueError):
         bootstrap.diagnostic('untrusted-secret-canary')
+
+
+
+def check_bootstrap_uses_image_virtualenv_without_downloads(tmp_path, monkeypatch):
+    run = Mock()
+    stage = Mock()
+    monkeypatch.setattr(bootstrap.subprocess, 'run', run)
+    monkeypatch.setattr(bootstrap, 'diagnostic', stage)
+    python = bootstrap.create_environment(tmp_path)
+    command = run.call_args.args[0]
+    assert command == [bootstrap.sys.executable, '-m', 'virtualenv', '--no-download',
+                       '--no-periodic-update', str(tmp_path / 'venv')]
+    assert run.call_args.kwargs == dict(check=True, timeout=90)
+    assert python == str(tmp_path / 'venv/bin/python')
+    stage.assert_called_once_with('venv_create')
+
+
+def check_bootstrap_environment_failure_stops_installation(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(bootstrap, 'diagnostic', Mock())
+    run = Mock(side_effect=subprocess.CalledProcessError(1, ['fixture']))
+    monkeypatch.setattr(bootstrap.subprocess, 'run', run)
+    with pytest.raises(subprocess.CalledProcessError):
+        bootstrap.create_environment(tmp_path)
+    assert run.call_count == 1

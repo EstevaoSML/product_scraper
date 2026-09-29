@@ -223,3 +223,9 @@ Deploy the change and run a no-model Smoke test:
 If Smoke fails, open your Storage account in Azure Portal > Storage browser > Blob containers > catalog > executions > diagnostics, then open the JSON matching the run ID printed by the command. Share that JSON for diagnosis. A record left as `running` identifies the last completed diagnostic write, not proof that the job is still running.
 
 This uses the existing private Storage account and RBAC; no Log Analytics, ACR or additional service is created. Storage writes/retained bytes incur normal usage charges. These records start with the next updated run and cannot recover the old execution's logs. They are best effort: failures before Python starts, missing managed identity, unavailable Storage or abrupt process termination can prevent a failure record. Worker import failures can leave `worker_start` as the last stage. This is application diagnostics, not persistent Azure platform/system logs. Portal Console/System links still require a Log Analytics workspace.
+
+## Failure at venv_create
+
+A diagnostic with stage `venv_create` and `CalledProcessError` means download and archive extraction completed, but environment creation failed before dependency installation. The bootstrap now uses the public image's bundled `python -m virtualenv --no-download --no-periodic-update`, matching the image's own environment-creation mechanism and avoiding stdlib venv's optional Ubuntu ensurepip dependency. See the [versioned Microsoft Dockerfile](https://github.com/microsoft/playwright-python/blob/v1.63.0/utils/docker/Dockerfile.noble).
+
+Run Deploy again to update the embedded bootstrap and package, then run Smoke. This preserves the existing Terraform state and resource names. No new registry, image build or Azure service is needed. A successful real Smoke is still required to confirm the fix; the diagnostic does not contain stderr proving the original subprocess's exact error message.
