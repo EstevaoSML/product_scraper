@@ -27,14 +27,14 @@ def ledger():
 
 def check_monthly_budget_is_idempotent_and_never_refunds_failed_attempts():
     state = ledger()
-    for i in range(10):
-        for retailer in RETAILERS:
+    for i in range(50):
+        for retailer in worker.ACTIVE_RETAILERS:
             key = worker.reserve(state, '2026-09', str(i), retailer)
             assert key
             state['attempts'][key]['status'] = 'failed'
             assert worker.reserve(state, '2026-09', str(i), retailer) is None
-    assert len(state['attempts']) == 40
-    assert sum(a['reserved_cents'] for a in state['attempts'].values()) == 200
+    assert len(state['attempts']) == 150
+    assert sum(a['reserved_cents'] for a in state['attempts'].values()) == 750
     assert worker.reserve(state, '2026-09', 'another-product', 'kabum') is None
 
 
@@ -132,6 +132,12 @@ def check_static_export_retains_search_and_averages_without_private_data(tmp_pat
     assert '<script>alert(1)</script>' not in page
     assert 'Content-Security-Policy' in page
     assert any(k.endswith('app.js') for k in files)
+    translation_asset = next(k for k in files if k.endswith('/i18n.js'))
+    assert '/' + translation_asset in page
+    assert page.index('/i18n.js') < page.index('/app.js')
+    assert page.count('data-product="p"') == 4
+    assert 'aria-haspopup="dialog"' in page
+    assert all(f'value="{lang}"' in page for lang in ('pt-BR','en','es'))
     assert state == original
 
 
@@ -185,7 +191,7 @@ def check_job_override_preserves_image_and_bootstrap():
     container = template['containers'][0]
     assert container['command'] == ['python3', '-c', 'trusted']
     assert {e['name']:e['value'] for e in container['env']} == dict(PACKAGE_SHA256='hash',RUN_MODE='smoke',MAX_TASKS='1')
-    with pytest.raises(ValueError): start_template(job, 'collect', 41)
+    with pytest.raises(ValueError): start_template(job, 'collect', 151)
 
 
 def check_research_subprocess_uses_existing_cli_with_zero_image_budget(tmp_path, monkeypatch):
@@ -245,7 +251,8 @@ def check_reservation_persisted_before_launch_and_rerun_skips(tmp_path, monkeypa
     secret.get_secret.return_value.value = 'fixture-key'
     monkeypatch.setattr(azure.keyvault.secrets, 'SecretClient', lambda *a, **kw: secret)
     monkeypatch.setenv('KEY_VAULT_NAME', 'fixture')
-    monkeypatch.setattr(worker, 'RETAILERS', {'kabum': RETAILERS['kabum']})
+    monkeypatch.setattr(worker, 'ACTIVE_RETAILERS', ('kabum',))
+    monkeypatch.setattr(worker, 'ensure_image', Mock())
     launches = []
     def run(seed, retailer, directory, api_key, lost):
         assert json.loads(saved['data'])['attempts']['p/kabum']['status'] == 'reserved'
@@ -294,7 +301,7 @@ def check_new_subscription_registers_required_azure_services():
     import re
     text = (Path(__file__).resolve().parents[1] / 'webapp/deploy/portfolio/terraform/main.tf').read_text()
     provider = text.split('provider "azurerm" {', 1)[1].split('data "azurerm_client_config"', 1)[0]
-    registration = re.search(r'resource_providers_to_register\s*=\s*\[([^\]]+)\]', provider)
+    registration = re.search(r'resource_providers_to_register\s*=\s*var.register_resource_providers\s*\?\s*\[([^\]]+)\]', provider)
     assert registration, 'Fresh subscriptions require explicit resource-provider registration'
     services = set(re.findall(r'"(Microsoft\.[^"]+)"', registration.group(1)))
     assert {'Microsoft.App', 'Microsoft.Storage', 'Microsoft.KeyVault',

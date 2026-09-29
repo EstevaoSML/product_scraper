@@ -1,3 +1,5 @@
+> Legacy CI/CD. New portfolio deployments use [GitHub Actions](../github/README.md). Keep this stack only for auditing/removing existing Azure DevOps resources.
+
 # Azure DevOps CI/CD and Log Analytics
 
 This Terraform bootstrap connects an **existing Azure Repos repository** to two pipelines. It also creates federated Azure identities, service connections, branch protection and deployment checks. It does not create an Azure DevOps organization, upload your repository or deploy resources until you apply it.

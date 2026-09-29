@@ -1,0 +1,6 @@
+# Copy to backend.generated.tf for BOTH your local checkout and GitHub runner.
+# Supply backend.hcl locally. GitHub supplies these settings during init.
+terraform {
+  backend "azurerm" {}
+}
+

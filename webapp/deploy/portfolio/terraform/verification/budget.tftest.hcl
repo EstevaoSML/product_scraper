@@ -7,18 +7,18 @@ mock_provider "azurerm" {
   }
 }
 variables {
-  deploy_job = false
+  deploy_job              = false
   enable_monthly_schedule = false
-  package_sha256 = ""
-  subscription_id   = "11111111-1111-1111-1111-111111111111"
-  name              = "pricefixture01"
-  alert_email       = "operator@example.com"
-  budget_start_date = "2026-09-01T00:00:00Z"
+  package_sha256          = ""
+  subscription_id         = "11111111-1111-1111-1111-111111111111"
+  name                    = "pricefixture01"
+  alert_email             = "operator@example.com"
+  budget_start_date       = "2026-09-01T00:00:00Z"
 }
 run "foundation" {
   command = plan
   assert {
-    condition = one([for rule in azurerm_storage_management_policy.retention.rule : rule.actions[0].base_blob[0].delete_after_days_since_modification_greater_than if rule.name == "expire-job-diagnostics"]) == 30
+    condition     = one([for rule in azurerm_storage_management_policy.retention.rule : rule.actions[0].base_blob[0].delete_after_days_since_modification_greater_than if rule.name == "expire-job-diagnostics"]) == 30
     error_message = "Private job diagnostics must expire after 30 days."
   }
   assert {
@@ -62,7 +62,7 @@ run "manual_first_test" {
     package_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
   assert {
-    condition     = azurerm_container_app_job.monthly[0].replica_retry_limit == 0 && azurerm_container_app_job.monthly[0].replica_timeout_in_seconds == 14400 && length(azurerm_container_app_job.monthly[0].manual_trigger_config) == 1
+    condition     = azurerm_container_app_job.monthly[0].replica_retry_limit == 0 && azurerm_container_app_job.monthly[0].replica_timeout_in_seconds == 86400 && length(azurerm_container_app_job.monthly[0].manual_trigger_config) == 1
     error_message = "The first deployment must be manual, with no paid retry and bounded compute."
   }
   assert {
@@ -82,6 +82,10 @@ run "monthly_only" {
     package_sha256          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
   assert {
+    condition     = one([for env in azurerm_container_app_job.monthly[0].template[0].container[0].env : env.value if env.name == "MAX_TASKS"]) == "150" && azurerm_consumption_budget_resource_group.alert.amount == 20
+    error_message = "The expanded workload must allow 150 searches and use the updated budget alert."
+  }
+  assert {
     condition     = azurerm_container_app_job.monthly[0].schedule_trigger_config[0].cron_expression == "0 9 1 * *" && azurerm_container_app_job.monthly[0].schedule_trigger_config[0].parallelism == 1
     error_message = "Collect sequentially on the first day of the month, not daily."
   }
@@ -90,4 +94,16 @@ run "reject_unbuilt_package" {
   command = plan
   variables { deploy_job = true }
   expect_failures = [azurerm_container_app_job.monthly]
+}
+
+run "github_preserves_operator" {
+  command = plan
+  variables {
+    operator_object_id          = "44444444-4444-4444-4444-444444444444"
+    register_resource_providers = false
+  }
+  assert {
+    condition     = azurerm_role_assignment.operator_data.principal_id == var.operator_object_id && azurerm_role_assignment.operator_secrets.principal_id == var.operator_object_id
+    error_message = "CI must preserve the existing human storage and Key Vault roles."
+  }
 }

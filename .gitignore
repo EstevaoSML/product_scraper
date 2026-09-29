@@ -36,3 +36,6 @@ crash.log
 # Local deployment settings and write temporary files
 /portfolio-deployment.local.json
 /portfolio-deployment.local.json.*.tmp
+
+# Generated remote-state backend (local and GitHub runner)
+backend.generated.tf

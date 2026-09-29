@@ -1,4 +1,4 @@
-"""One Azure job, one browser, at most 40 model attempts / USD 2 reserved per UTC month."""
+"""One Azure job: 50 products, three retailers, durable monthly reservations."""
 from webapp.portfolio import bootstrap as job_diagnostics
 from webapp.portfolio.bootstrap import diagnostic
 from contextlib import contextmanager
@@ -18,25 +18,57 @@ from webapp.cloud_catalog import export_state, validate_state
 from webapp.cloud_job import add_image, publish, restore_database, upload_file, writer
 from webapp.retail_catalog import ROOT, RETAILERS, RetailCatalog, import_report, record_run
 from .site import publish_site
+from .images import ensure_image
+
+ACTIVE_RETAILERS = ('kabum', 'amazon', 'americanas')
 
 RESERVATION_CENTS = 5
-MONTHLY_CENTS = 200
-MAX_ATTEMPTS = 40
+MONTHLY_CENTS = 800  # $7.50 active + up to $0.50 already reserved by legacy Casas Bahia.
+MAX_ATTEMPTS = 150
+MAX_LEGACY_ATTEMPTS = 10
 
 
-def reserve(ledger, month, product_id, retailer):
+def validate_ledger(ledger, month):
     """Fail closed on corrupt ledgers; a crash does not refund a reservation."""
     if ledger.get('month') != month or ledger.get('schema_version') != 1:
         raise ValueError('Invalid monthly ledger')
     attempts = ledger.get('attempts')
-    if not isinstance(attempts, dict) or len(attempts) > MAX_ATTEMPTS or any(a.get('reserved_cents') != RESERVATION_CENTS for a in attempts.values()):
+    if not isinstance(attempts, dict) or len(attempts) > MAX_ATTEMPTS + MAX_LEGACY_ATTEMPTS or any(not isinstance(a, dict) or a.get('reserved_cents') != RESERVATION_CENTS for a in attempts.values()):
         raise ValueError('Invalid reservations')
+    legacy = sum(k.endswith('/casasbahia') for k in attempts)
+    if legacy > MAX_LEGACY_ATTEMPTS or any(k.rsplit('/', 1)[-1] not in (*ACTIVE_RETAILERS, 'casasbahia') for k in attempts):
+        raise ValueError('Invalid legacy reservations')
+    return attempts, legacy
+
+
+def reserve(ledger, month, product_id, retailer):
+    attempts, legacy = validate_ledger(ledger, month)
+    if retailer not in ACTIVE_RETAILERS:
+        raise ValueError('Retailer not enabled for monthly collection')
+    if len(attempts) - legacy >= MAX_ATTEMPTS:
+        return None
     key = product_id + '/' + retailer
     if key in attempts or (len(attempts) + 1) * RESERVATION_CENTS > MONTHLY_CENTS:
         return None
     attempts[key] = {'reserved_cents': RESERVATION_CENTS, 'status': 'reserved',
                      'at': datetime.now(timezone.utc).isoformat()}
     return key
+
+
+def collection_month(requested=''):
+    current = datetime.now(timezone.utc).strftime('%Y-%m')
+    if requested and requested != current:
+        raise ValueError('Collection month must be the current UTC month; historical prices cannot be backdated')
+    return current
+
+
+def refresh_manifest(state):
+    manifest = json.loads((Path(__file__).parent / 'products.json').read_text(encoding='utf-8'))
+    candidate = dict(state, manifest=manifest)
+    validate_state(candidate)
+    if len(manifest) != 50 or not {p['id'] for p in state['manifest']}.issubset({p['id'] for p in manifest}):
+        raise ValueError('Portfolio expansion must preserve existing product IDs')
+    return candidate
 
 
 def child_environment(source):
@@ -138,7 +170,7 @@ def collect(container, blob, lease, lost, state, credential, limit):
     from azure.core import MatchConditions
     from azure.core.exceptions import ResourceNotFoundError
     from azure.keyvault.secrets import SecretClient
-    month = datetime.now(timezone.utc).strftime('%Y-%m')
+    month = collection_month(os.environ.get('COLLECTION_MONTH', ''))
     ledger_blob = container.get_blob_client('ledger/' + month + '.json')
     try:
         download = ledger_blob.download_blob()
@@ -146,6 +178,9 @@ def collect(container, blob, lease, lost, state, credential, limit):
         etag = download.properties.etag
     except ResourceNotFoundError:
         ledger, etag = dict(schema_version=1, month=month, attempts={}), None
+    validate_ledger(ledger, month)
+    from .images import validate_images
+    validate_images(ledger)
     def save_ledger():
         nonlocal etag
         if lost.is_set():
@@ -161,11 +196,16 @@ def collect(container, blob, lease, lost, state, credential, limit):
         api_key = client.get_secret('openai-api-key').value
     if not api_key:
         raise ValueError('Missing OpenAI secret')
+    if any(v.get('budget_exceeded') for v in ledger.get('images', {}).values()):
+        raise ValueError('A previous image request exceeded its estimate; review the ledger')
     attempted = 0
     with tempfile.TemporaryDirectory(prefix='monthly-') as scratch:
         repo = restore_database(state, Path(scratch))
         for seed in state['manifest']:
-            for retailer in RETAILERS:
+            if attempted >= limit or datetime.now(timezone.utc).strftime('%Y-%m') != month:
+                return state
+            ensure_image(container, blob, lease, lost, state, seed, ledger, save_ledger, scratch, api_key)
+            for retailer in ACTIVE_RETAILERS:
                 if attempted >= limit or datetime.now(timezone.utc).strftime('%Y-%m') != month:
                     return state
                 key = reserve(ledger, month, seed['id'], retailer)
@@ -201,10 +241,13 @@ def collect(container, blob, lease, lost, state, credential, limit):
                 save_ledger()
                 record_run(repo.db_path, seed['id'], status, reason=None)
                 updated = export_state(repo)
+                for product_id, run in state['runs'].items():
+                    updated['runs'].setdefault(product_id, run)
                 for product_id, run in updated['runs'].items():
                     old_key = state['runs'].get(product_id, {}).get('image_blob')
                     if old_key:
                         run['image_blob'] = old_key
+                        run['image_status'] = state['runs'][product_id].get('image_status')
                 publish(container, blob, lease, lost, updated)
                 state = updated
                 print(json.dumps(dict(product=seed['id'], retailer=retailer, status=status)), flush=True)
@@ -216,9 +259,11 @@ def main():
     from azure.identity import ManagedIdentityCredential
     from azure.storage.blob import BlobServiceClient
     action = os.environ.get('RUN_MODE', 'smoke')
-    limit = int(os.environ.get('MAX_TASKS', '40'))
+    limit = int(os.environ.get('MAX_TASKS', '150'))
     if action not in ('smoke', 'publish', 'collect') or not 1 <= limit <= MAX_ATTEMPTS:
         raise ValueError('Invalid job configuration')
+    if action == 'collect':
+        collection_month(os.environ.get('COLLECTION_MONTH', ''))
     # Always use the configured identity, never developer credentials in Azure.
     credential = ManagedIdentityCredential(client_id=os.environ['AZURE_CLIENT_ID'])
     service = BlobServiceClient('https://' + os.environ['CATALOG_STORAGE_ACCOUNT'] + '.blob.core.windows.net',
@@ -233,6 +278,8 @@ def main():
             else:
                 state = seed_state(container)
                 publish(container, blob, lease, lost, state)
+            state = refresh_manifest(state)
+            publish(container, blob, lease, lost, state)
             if action == 'smoke':
                 diagnostic('browser_smoke')
                 browser_smoke()

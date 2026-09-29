@@ -2,9 +2,13 @@ param(
     [ValidateSet('Validate','CheckSettings','Deploy','Smoke','Publish','CollectOne','CollectMonthly','SetSecret','EnableSchedule','DisableSchedule')]
     [string]$Action = 'Validate',
     [string]$Terraform = 'terraform',
-    [string]$Python = 'python'
+    [string]$Python = 'python',
+    [string]$Month = ''
 )
 $ErrorActionPreference = 'Stop'
+if ($Month -and ($Action -notin @('CollectOne','CollectMonthly') -or $Month -cne (Get-Date).ToUniversalTime().ToString('yyyy-MM'))) {
+    throw 'Month must be the current UTC month (YYYY-MM) and used only with CollectOne or CollectMonthly. Live prices cannot be backdated.'
+}
 $infra = Join-Path $PSScriptRoot 'terraform'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $scratch = Join-Path $repo '.ci-runtime/portfolio'
@@ -169,9 +173,11 @@ if ($Action -eq 'SetSecret') {
     Apply-Plan
 } else {
     $mode = switch ($Action) { 'Smoke' { 'smoke' } 'Publish' { 'publish' } default { 'collect' } }
-    $limit = if ($Action -eq 'CollectOne') { '1' } else { '40' }
+    $limit = if ($Action -eq 'CollectOne') { '1' } else { '150' }
     if ($mode -eq 'collect') {
         Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'check-ready', '--outputs', $outputsFile)
     }
-    Invoke-Checked $Python @((Join-Path $PSScriptRoot 'operations.py'), 'start', '--outputs', $outputsFile, '--mode', $mode, '--limit', $limit)
+    $startArgs = @((Join-Path $PSScriptRoot 'operations.py'), 'start', '--outputs', $outputsFile, '--mode', $mode, '--limit', $limit)
+    if ($Month) { $startArgs += @('--month', $Month) }
+    Invoke-Checked $Python $startArgs
 }

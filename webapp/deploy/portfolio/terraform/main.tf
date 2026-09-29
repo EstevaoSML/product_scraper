@@ -16,14 +16,14 @@ provider "azurerm" {
   # Explicit registration supports new subscriptions without depending on the
   # provider version's default registration set. AzureRM waits during configure.
   resource_provider_registrations = "none"
-  resource_providers_to_register = [
+  resource_providers_to_register = var.register_resource_providers ? [
     "Microsoft.App",
     "Microsoft.Consumption",
     "Microsoft.KeyVault",
     "Microsoft.ManagedIdentity",
     "Microsoft.OperationalInsights",
     "Microsoft.Storage",
-  ]
+  ] : []
 }
 data "azurerm_client_config" "operator" {}
 
@@ -53,7 +53,7 @@ resource "azurerm_storage_account" "data" {
 resource "azurerm_role_assignment" "operator_data" {
   scope                = azurerm_storage_account.data.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_client_config.operator.object_id
+  principal_id         = var.operator_object_id != "" ? var.operator_object_id : data.azurerm_client_config.operator.object_id
 }
 resource "azurerm_storage_container" "private" {
   for_each              = toset(["catalog", "packages"])
@@ -137,7 +137,7 @@ resource "azurerm_key_vault" "secrets" {
 resource "azurerm_role_assignment" "operator_secrets" {
   scope                = azurerm_key_vault.secrets.id
   role_definition_name = "Key Vault Secrets Officer"
-  principal_id         = data.azurerm_client_config.operator.object_id
+  principal_id         = var.operator_object_id != "" ? var.operator_object_id : data.azurerm_client_config.operator.object_id
 }
 resource "azurerm_role_assignment" "job_secret" {
   # Dedicated portfolio vault; its only persistent runtime secret is OpenAI.
@@ -167,7 +167,7 @@ resource "azurerm_container_app_job" "monthly" {
   resource_group_name          = azurerm_resource_group.portfolio.name
   container_app_environment_id = azurerm_container_app_environment.jobs.id
   workload_profile_name        = "Consumption"
-  replica_timeout_in_seconds   = 14400
+  replica_timeout_in_seconds   = 86400
   replica_retry_limit          = 0
   identity {
     type         = "UserAssigned"
@@ -203,7 +203,7 @@ resource "azurerm_container_app_job" "monthly" {
           KEY_VAULT_NAME          = azurerm_key_vault.secrets.name
           PACKAGE_SHA256          = var.package_sha256
           RUN_MODE                = var.enable_monthly_schedule ? "collect" : "smoke"
-          MAX_TASKS               = "40"
+          MAX_TASKS               = "150"
           SUGGESTION_EMAIL        = var.suggestion_email
         }
         content {
@@ -224,7 +224,7 @@ resource "azurerm_container_app_job" "monthly" {
 resource "azurerm_consumption_budget_resource_group" "alert" {
   name              = "portfolio-monthly"
   resource_group_id = azurerm_resource_group.portfolio.id
-  amount            = 8
+  amount            = 20
   time_grain        = "Monthly"
   time_period {
     start_date = var.budget_start_date

@@ -50,3 +50,14 @@ variable "budget_start_date" {
     error_message = "Use YYYY-MM-01T00:00:00Z."
   }
 }
+
+variable "operator_object_id" {
+  description = "Existing human operator; GitHub restores this from remote state."
+  type        = string
+  default     = ""
+}
+variable "register_resource_providers" {
+  description = "Bootstrap registers providers locally; scoped GitHub identity does not."
+  type        = bool
+  default     = true
+}

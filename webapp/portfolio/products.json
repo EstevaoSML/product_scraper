@@ -1,12 +1,302 @@
 [
-  {"id":"ps5-digital","query":"PlayStation 5 Digital Slim 825GB CFI 2114B","name":"PlayStation 5 Digital Slim","category":"Games"},
-  {"id":"logitech-g502","query":"Mouse Logitech G502 HERO 910-005550","name":"Logitech G502 HERO","category":"Periféricos"},
-  {"id":"hyperx-alloy","query":"Teclado HyperX Alloy Origins Core Switch HyperX Red","name":"HyperX Alloy Origins Core","category":"Periféricos"},
-  {"id":"kingston-nv3","query":"SSD Kingston NV3 1TB SNV3S/1000G","name":"Kingston NV3 1 TB","category":"Armazenamento"},
-  {"id":"hyperx-cloud","query":"Headset HyperX Cloud III Preto 727A8AA","name":"HyperX Cloud III","category":"Áudio"},
-  {"id":"logitech-mx-master","query":"Mouse Logitech MX Master 3S grafite 910-006561","name":"Logitech MX Master 3S","category":"Periféricos"},
-  {"id":"samsung-990-pro","query":"SSD Samsung 990 PRO 1TB MZ-V9P1T0BW sem dissipador","name":"Samsung 990 PRO 1 TB","category":"Armazenamento"},
-  {"id":"jbl-flip-6","query":"Caixa de som JBL Flip 6 preta JBLFLIP6BLK","name":"JBL Flip 6","category":"Áudio"},
-  {"id":"xbox-series-s","query":"Xbox Series S 512GB branco console","name":"Xbox Series S 512 GB","category":"Games"},
-  {"id":"lg-24mp400","query":"Monitor LG 24MP400-B 23.8 IPS Full HD","name":"LG 24MP400-B","category":"Monitores"}
+  {
+    "id": "ps5-digital",
+    "query": "PlayStation 5 Digital Slim 825GB CFI 2114B",
+    "name": "PlayStation 5 Digital Slim",
+    "category": "Games"
+  },
+  {
+    "id": "logitech-g502",
+    "query": "Mouse Logitech G502 HERO 910-005550",
+    "name": "Logitech G502 HERO",
+    "category": "Periféricos"
+  },
+  {
+    "id": "hyperx-alloy",
+    "query": "Teclado HyperX Alloy Origins Core Switch HyperX Red",
+    "name": "HyperX Alloy Origins Core",
+    "category": "Periféricos"
+  },
+  {
+    "id": "kingston-nv3",
+    "query": "SSD Kingston NV3 1TB SNV3S/1000G",
+    "name": "Kingston NV3 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "hyperx-cloud",
+    "query": "Headset HyperX Cloud III Preto 727A8AA",
+    "name": "HyperX Cloud III",
+    "category": "Áudio"
+  },
+  {
+    "id": "logitech-mx-master",
+    "query": "Mouse Logitech MX Master 3S grafite 910-006561",
+    "name": "Logitech MX Master 3S",
+    "category": "Periféricos"
+  },
+  {
+    "id": "samsung-990-pro",
+    "query": "SSD Samsung 990 PRO 1TB MZ-V9P1T0BW sem dissipador",
+    "name": "Samsung 990 PRO 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "jbl-flip-6",
+    "query": "Caixa de som JBL Flip 6 preta JBLFLIP6BLK",
+    "name": "JBL Flip 6",
+    "category": "Áudio"
+  },
+  {
+    "id": "xbox-series-s",
+    "query": "Xbox Series S 512GB branco console",
+    "name": "Xbox Series S 512 GB",
+    "category": "Games"
+  },
+  {
+    "id": "lg-24mp400",
+    "query": "Monitor LG 24MP400-B 23.8 IPS Full HD",
+    "name": "LG 24MP400-B",
+    "category": "Monitores"
+  },
+  {
+    "id": "logitech-g305",
+    "query": "Mouse Logitech G305 LIGHTSPEED preto",
+    "name": "Logitech G305",
+    "category": "Periféricos"
+  },
+  {
+    "id": "logitech-g203",
+    "query": "Mouse Logitech G203 LIGHTSYNC preto",
+    "name": "Logitech G203",
+    "category": "Periféricos"
+  },
+  {
+    "id": "razer-deathadder-v2",
+    "query": "Mouse Razer DeathAdder V2 preto",
+    "name": "Razer DeathAdder V2",
+    "category": "Periféricos"
+  },
+  {
+    "id": "razer-viper-mini",
+    "query": "Mouse Razer Viper Mini preto",
+    "name": "Razer Viper Mini",
+    "category": "Periféricos"
+  },
+  {
+    "id": "logitech-k380",
+    "query": "Teclado Logitech K380 grafite português",
+    "name": "Logitech K380",
+    "category": "Periféricos"
+  },
+  {
+    "id": "logitech-mk270",
+    "query": "Kit teclado e mouse Logitech MK270 ABNT2",
+    "name": "Logitech MK270",
+    "category": "Periféricos"
+  },
+  {
+    "id": "redragon-kumara",
+    "query": "Teclado Redragon Kumara K552 switch vermelho ABNT2 preto",
+    "name": "Redragon Kumara K552",
+    "category": "Periféricos"
+  },
+  {
+    "id": "logitech-c920",
+    "query": "Webcam Logitech C920 Full HD",
+    "name": "Logitech C920",
+    "category": "Periféricos"
+  },
+  {
+    "id": "logitech-c270",
+    "query": "Webcam Logitech C270 HD",
+    "name": "Logitech C270",
+    "category": "Periféricos"
+  },
+  {
+    "id": "hyperx-quadcast",
+    "query": "Microfone HyperX QuadCast preto vermelho",
+    "name": "HyperX QuadCast",
+    "category": "Áudio"
+  },
+  {
+    "id": "blue-snowball-ice",
+    "query": "Microfone Logitech Blue Snowball iCE preto",
+    "name": "Blue Snowball iCE",
+    "category": "Áudio"
+  },
+  {
+    "id": "jbl-charge-5",
+    "query": "Caixa de som JBL Charge 5 preta",
+    "name": "JBL Charge 5",
+    "category": "Áudio"
+  },
+  {
+    "id": "jbl-go-4",
+    "query": "Caixa de som JBL Go 4 preta",
+    "name": "JBL Go 4",
+    "category": "Áudio"
+  },
+  {
+    "id": "jbl-tune-520bt",
+    "query": "Fone JBL Tune 520BT preto",
+    "name": "JBL Tune 520BT",
+    "category": "Áudio"
+  },
+  {
+    "id": "sony-wh1000xm5",
+    "query": "Fone Sony WH-1000XM5 preto",
+    "name": "Sony WH-1000XM5",
+    "category": "Áudio"
+  },
+  {
+    "id": "logitech-g435",
+    "query": "Headset Logitech G435 preto amarelo",
+    "name": "Logitech G435",
+    "category": "Áudio"
+  },
+  {
+    "id": "hyperx-cloud-stinger-2",
+    "query": "Headset HyperX Cloud Stinger 2 preto",
+    "name": "HyperX Cloud Stinger 2",
+    "category": "Áudio"
+  },
+  {
+    "id": "samsung-980",
+    "query": "SSD Samsung 980 1TB M.2 NVMe",
+    "name": "Samsung 980 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "wd-black-sn770",
+    "query": "SSD WD Black SN770 1TB NVMe",
+    "name": "WD Black SN770 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "crucial-p3-plus",
+    "query": "SSD Crucial P3 Plus 1TB NVMe",
+    "name": "Crucial P3 Plus 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "kingston-xs1000",
+    "query": "SSD externo Kingston XS1000 1TB preto",
+    "name": "Kingston XS1000 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "sandisk-extreme-portable",
+    "query": "SSD externo SanDisk Extreme Portable 1TB USB C",
+    "name": "SanDisk Extreme Portable 1 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "seagate-expansion-2tb",
+    "query": "HD externo Seagate Expansion portátil 2TB USB 3.0",
+    "name": "Seagate Expansion 2 TB",
+    "category": "Armazenamento"
+  },
+  {
+    "id": "kingston-fury-beast-ddr4",
+    "query": "Memória Kingston Fury Beast 16GB DDR4 3200MHz um módulo",
+    "name": "Kingston Fury Beast 16 GB",
+    "category": "Componentes"
+  },
+  {
+    "id": "corsair-vengeance-lpx",
+    "query": "Memória Corsair Vengeance LPX 32GB 2x16GB DDR4 3200MHz preta",
+    "name": "Corsair Vengeance LPX 32 GB",
+    "category": "Componentes"
+  },
+  {
+    "id": "amd-ryzen-5600",
+    "query": "Processador AMD Ryzen 5 5600 AM4 box",
+    "name": "AMD Ryzen 5 5600",
+    "category": "Componentes"
+  },
+  {
+    "id": "amd-ryzen-5700x",
+    "query": "Processador AMD Ryzen 7 5700X AM4",
+    "name": "AMD Ryzen 7 5700X",
+    "category": "Componentes"
+  },
+  {
+    "id": "intel-i5-12400f",
+    "query": "Processador Intel Core i5-12400F LGA1700 box",
+    "name": "Intel Core i5-12400F",
+    "category": "Componentes"
+  },
+  {
+    "id": "corsair-cv650",
+    "query": "Fonte Corsair CV650 650W 80 Plus Bronze",
+    "name": "Corsair CV650",
+    "category": "Componentes"
+  },
+  {
+    "id": "cooler-master-hyper-212",
+    "query": "Cooler processador Cooler Master Hyper 212 Black Edition",
+    "name": "Cooler Master Hyper 212",
+    "category": "Componentes"
+  },
+  {
+    "id": "tp-link-archer-ax53",
+    "query": "Roteador TP-Link Archer AX53 AX3000",
+    "name": "TP-Link Archer AX53",
+    "category": "Redes"
+  },
+  {
+    "id": "tp-link-archer-c6",
+    "query": "Roteador TP-Link Archer C6 AC1200",
+    "name": "TP-Link Archer C6",
+    "category": "Redes"
+  },
+  {
+    "id": "tp-link-deco-m4",
+    "query": "Roteador TP-Link Deco M4 AC1200 kit 2 unidades",
+    "name": "TP-Link Deco M4 (2 unidades)",
+    "category": "Redes"
+  },
+  {
+    "id": "tp-link-tapo-c200",
+    "query": "Câmera TP-Link Tapo C200 Full HD",
+    "name": "TP-Link Tapo C200",
+    "category": "Casa inteligente"
+  },
+  {
+    "id": "echo-dot-5",
+    "query": "Amazon Echo Dot 5 geração cor preta",
+    "name": "Echo Dot 5ª geração",
+    "category": "Casa inteligente"
+  },
+  {
+    "id": "fire-tv-stick-lite",
+    "query": "Amazon Fire TV Stick Lite Full HD",
+    "name": "Fire TV Stick Lite",
+    "category": "Casa inteligente"
+  },
+  {
+    "id": "nintendo-switch-oled",
+    "query": "Nintendo Switch OLED 64GB branco",
+    "name": "Nintendo Switch OLED",
+    "category": "Games"
+  },
+  {
+    "id": "dualsense-white",
+    "query": "Controle Sony DualSense PS5 branco",
+    "name": "DualSense branco",
+    "category": "Games"
+  },
+  {
+    "id": "xbox-controller-carbon",
+    "query": "Controle Xbox Series sem fio Carbon Black",
+    "name": "Controle Xbox Carbon Black",
+    "category": "Games"
+  },
+  {
+    "id": "aoc-24g2",
+    "query": "Monitor AOC 24G2 23.8 IPS Full HD 144Hz",
+    "name": "AOC 24G2",
+    "category": "Monitores"
+  }
 ]

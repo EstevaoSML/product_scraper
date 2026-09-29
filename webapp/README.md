@@ -76,3 +76,9 @@ python scripts/container_ci.py
 ```
 
 Consulte `VALIDATION.md` para resultados e limitações. `preview.html` é uma exportação estática: mantenha `static` junto dele; novos dados aparecem no Flask, não automaticamente na exportação.
+
+## Product details and interface languages
+
+Click a product name, current price, first recorded price, or the retailer/history button to open the same details dialog. The controls support keyboard activation. The header language selector offers Portuguese, English and Spanish and stores the choice locally when browser storage is available. Dates and BRL price formatting follow the selected language; there is no currency conversion. Product names, variants and retailer evidence remain as collected from their sources.
+
+The translations also ship in the Azure static export as a versioned JavaScript asset. To publish an updated interface, use the portfolio Deploy action followed by Publish (or Smoke when validating the updated runtime). Deploy disables the monthly schedule; run Smoke successfully before enabling it again.

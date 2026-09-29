@@ -1,8 +1,8 @@
 # Azure portfolio deployment — no ACR
 
-This is the low-budget deployment for **10 products × 4 retailers each month**. It is a separate Terraform stack. The existing `webapp/deploy/terraform` production stack is preserved; do not apply this configuration to its state.
+This is the low-budget deployment for **50 products × 3 retailers each month** (KaBuM, Amazon Brazil and Americanas). It is a separate Terraform stack. The existing `webapp/deploy/terraform` production stack is preserved; do not apply this configuration to its state.
 
-All scheduled execution, browser scraping, agent calls, secrets, website hosting and durable files run on Azure. Your computer only packages source and runs deployment commands. OpenAI remains the external model provider already used by this project. There is no GitHub Actions runner, external container registry account, ACR resource, or custom image build.
+All scheduled execution, browser scraping, agent calls, secrets, website hosting and durable files run on Azure. Your computer only packages source and runs deployment commands. OpenAI remains the external model provider already used by this project. GitHub Actions can build/deploy the package; all scheduled research runs in Azure. No external registry account, ACR resource or custom image build is required.
 
 ## Resources and data flow
 
@@ -12,34 +12,32 @@ All scheduled execution, browser scraping, agent calls, secrets, website hosting
 | StorageV2 Standard LRS, ADLS Gen2 enabled | Private `catalog` container with observations, evidence, monthly budget ledgers and execution status; private `packages` container with application/browser ZIPs |
 | Storage static website (`$web`) | Public HTML, CSS, JavaScript and illustrative product images only; search, history and retailer details work in the browser |
 | Container Apps Consumption environment | Hosts one job; no dedicated workload profile, custom VNet, NAT gateway or private endpoint |
-| One Container Apps Job | Starts manually for the first test; optionally runs on the **first day of each month at 09:00 UTC (06:00 Brasília)**; 2 vCPU / 4 GiB, one replica, no automatic retries, 4-hour execution timeout |
+| One Container Apps Job | Starts manually for the first test; optionally runs on the **first day of each month at 09:00 UTC (06:00 Brasília)**; 2 vCPU / 4 GiB, one replica, no automatic retries, 24-hour execution timeout |
 | User-assigned managed identity + RBAC | Reads the private package and Key Vault; writes catalog and public site without storage account keys |
 | Dedicated Key Vault Standard | Holds `openai-api-key`; no secret values in Terraform variables, state or command arguments |
-| Monthly resource-group budget | Alerts at 50% and 100% of 8 **billing-currency units**; it does not stop spending |
+| Monthly resource-group budget | Alerts at 50% and 100% of 20 **billing-currency units**; it does not stop spending |
 | Storage lifecycle policy | Deletes raw reports after 90 days and old catalog snapshots after 30 days; preserves latest catalog with full price history, monthly ledgers, images and packages |
 
 The job uses Microsoft's public `mcr.microsoft.com/playwright/python:v1.63.0-noble`, pinned by digest. **Public container image** means Microsoft's reusable runtime is downloadable; your application ZIP, research reports and secrets remain private. The SHA-256 of the ZIP is pinned in Terraform, and bootstrap verifies it before extraction/execution. The ZIP contains the application, initial catalog, existing illustrations and a matching Chrome/ChromeDriver 154.0.8037.57 pair obtained from Google's official distribution. Python dependencies install into an ephemeral venv at job startup.
 
 The existing Flask template is rendered into static HTML **inside the Azure job**. Static hosting replaces the always-running Flask HTTP server for this deployment; local Flask development and the previous production deployment still work. Azure Storage was chosen instead of Static Web Apps so the same managed identity can publish directly without deployment tokens or an external CI service. Blob static hosting has small usage charges; it is not a fixed-price/free SWA plan.
 
-## Expected monthly cost
+## Monthly budget and compute
 
-For a small LinkedIn demo with low traffic and approximately 1 GB or less of retained files:
+The target is **$20/month total**, not an enforceable Azure spending cap. See [monthly collection instructions](MONTHLY.md).
 
-| Item | Planning estimate, USD/month |
+| Item | Application allowance |
 |---|---:|
-| Agent research: 40 × maximum $0.05 | At most $2 in application reservations |
-| Image generation | $0 — disabled; existing five images are reused |
-| Container compute | Usually $0 within the subscription's unused Consumption free grant |
-| Storage, transactions, Key Vault and light website traffic | Allow $0.50–$2 |
-| ACR, always-on web/API/browser, private endpoints, Log Analytics ingestion | $0 — not provisioned by this stack |
-| **Expected portfolio total** | **Approximately $2.50–$4** |
+| 150 searches × $0.05 | $7.50 per UTC month |
+| Up to 50 missing images × $0.05 | $2.50; existing images cost no new generation |
+| Legacy September Casas Bahia reservations | Up to $0.50 already reserved; no new searches there |
+| Azure compute, storage, Key Vault and traffic | Remaining target budget; usage-based |
 
-This is an estimate, **not an enforceable $10 Azure spending cap**. Tax, region, subscription currency, other workloads consuming the shared free grant, repeated manual executions, package accumulation and public traffic can change the bill. Azure's cost budget alerts are delayed notifications, not a shutdown. The OpenAI bill is separate from Azure's cost budget; configure provider-side billing controls as well.
+Image allowances are estimates, not a provider-side dollar cap. The existing image tool checks the estimate before requesting an image and reports actual usage when available. An overrun stops further paid work for that month's ledger. Failed/interrupted attempts retain reservations. Azure's budget alert excludes the separate OpenAI bill and uses the subscription billing currency, not necessarily USD.
 
-At the four-hour job timeout, one execution uses at most 28,800 vCPU-seconds and 57,600 GiB-seconds, below the published monthly free grant of 180,000 vCPU-seconds / 360,000 GiB-seconds **when that grant is otherwise unused**. Initialization and failed/manual runs also consume compute. Keep the number of package versions small; delete an old private package only after it is no longer referenced by the job. Do not delete monthly ledgers to retry failed research.
+One 24-hour execution at 2 vCPU/4 GiB consumes up to 172,800 vCPU-seconds and 345,600 GiB-seconds. This is close to the subscription's shared monthly Consumption free grant (180,000 / 360,000); other jobs, smoke tests and manual reruns can push usage beyond it. Runtime usually ends earlier, but no measured estimate is claimed for 150 live retailer searches. Do not delete ledgers to retry; they enforce paid-attempt limits.
 
-Sources, checked 2026-09-27: [Container Apps billing](https://learn.microsoft.com/en-us/azure/container-apps/billing), [pricing](https://azure.microsoft.com/en-us/pricing/details/container-apps/), [Storage static website hosting](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-static-website-host), [Azure budget behavior](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets), [Microsoft Playwright Python images](https://playwright.dev/python/docs/docker).
+Sources: [Container Apps billing](https://learn.microsoft.com/en-us/azure/container-apps/billing), [scheduled jobs](https://learn.microsoft.com/en-us/azure/container-apps/jobs). No ACR, always-on app, private endpoint or Log Analytics workspace is added.
 
 ## First deployment and no-model test
 
@@ -96,14 +94,14 @@ Use the deployment script for normal operations. If you run Terraform plan/destr
 # Creates only this new stack, uploads the private package and creates a manual job.
 .\webapp\deploy\portfolio\deploy.ps1 -Action Deploy -Python .\.venv-deploy\Scripts\python.exe
 
-# Runs the real browser against example.com, seeds 10 products and publishes the page.
+# Runs the real browser against example.com, loads 50 products and publishes the page.
 # No OpenAI calls. The script waits for Azure execution success and prints the URL.
 .\webapp\deploy\portfolio\deploy.ps1 -Action Smoke -Python .\.venv-deploy\Scripts\python.exe
 ```
 
 `Deploy` uses two saved Terraform plans: foundation, then workload after package upload. It applies them, creates Azure resources, and leaves the monthly schedule **disabled**. It uses this stack's existing state; configuration changes can create, update or replace resources in that state. On updates it pauses this stack's schedule, preserves its existing state/history and requires the new package to pass Smoke before resuming collection. Review the Terraform output. Azure RBAC sometimes takes several minutes to propagate; package upload retries only authorization propagation failures. If a Terraform data-plane operation fails during propagation, rerun Deploy with the same name and state.
 
-The initial page contains the existing five observed products and five additional selected products awaiting evidence. New prices/history/images are **not fabricated**. Five new illustrations are intentionally not generated under this reduced budget. `Publish` republishes the last durable catalog without launching Chrome or calling the model (the shared bootstrap still prepares the runtime).
+The page preserves existing observations and adds the rest of the 50-product manifest awaiting evidence. Smoke and Publish make no paid model calls. Collect generates missing illustrative images using the existing image tool; illustrations are not retailer evidence. `Publish` republishes the last durable catalog without launching Chrome or calling the model (the shared bootstrap still prepares the runtime).
 
 ## Store the key, test one pair, then schedule
 
@@ -114,7 +112,7 @@ The initial page contains the existing five observed products and five additiona
 # Up to $0.05; first unattempted product/store pair in the UTC month.
 .\webapp\deploy\portfolio\deploy.ps1 -Action CollectOne -Python .\.venv-deploy\Scripts\python.exe
 
-# Remaining unattempted pairs this month, up to $2 INCLUDING CollectOne.
+# Remaining unattempted pairs this month, up to 150 research attempts INCLUDING CollectOne, plus missing images.
 .\webapp\deploy\portfolio\deploy.ps1 -Action CollectMonthly -Python .\.venv-deploy\Scripts\python.exe
 
 # Future monthly automatic runs; verifies current package passed Smoke and key exists.
@@ -124,7 +122,7 @@ The initial page contains the existing five observed products and five additiona
 .\webapp\deploy\portfolio\deploy.ps1 -Action DisableSchedule -Python .\.venv-deploy\Scripts\python.exe
 ```
 
-The worker invokes the existing `python -m app.research_job --url ... --product ... --max-cost-usd 0.05 --image-max-cost-usd 0` for each pair. Azure uses a Key Vault value and an ephemeral local MCP credential instead of your local key file. No model request is made on your deployment computer.
+The worker invokes the existing `python -m app.research_job --url ... --product ... --max-cost-usd 0.05 --image-max-cost-usd 0` for each pair. Missing images use the same host-only ProductImageTool separately with a $0.05 allowance, so they are generated once per product rather than per retailer. Azure uses a Key Vault value and an ephemeral local MCP credential instead of your local key file. No model request is made on your deployment computer.
 
 The private `catalog/ledger/YYYY-MM.json` reserves five US cents **before** each attempt. There are at most forty reservations, and each product/store is attempted once. Failures, timeouts, bot blocks, unconfirmed offers and manual retries do not refund reservations or repeat the same pair. A renewable catalog lease serializes jobs, and conditional ledger writes reject stale updates. Re-running CollectMonthly resumes only unattempted pairs. The date window is UTC; a run stops scheduling new pairs at a month boundary. A crash can leave an attempt marked reserved; this is intentional fail-closed behavior. The ledger records the agent's accounted cost when available, not an independently verified provider invoice.
 

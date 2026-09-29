@@ -1,10 +1,18 @@
 # Preço Claro — low-budget Azure portfolio
 
-A retail price-history website with monthly research for **10 products across four retailers**: KaBuM, Amazon Brazil, Americanas and Casas Bahia. The website displays the latest available retailer-price average and the earliest recorded date's average.
+A retail price-history website with monthly research for **50 products across three retailers**: KaBuM, Amazon Brazil and Americanas. The website displays the latest available retailer-price average and the earliest recorded date's average.
 
 The default deployment is `webapp/deploy/portfolio`: Azure Storage static website hosting, private ADLS Gen2 data/packages, one Container Apps Consumption Job, managed identity, Key Vault and a budget alert. It uses a public Microsoft runtime image and **does not create ACR**. Scraping, agent execution and website publication run on Azure; your computer packages the application and runs Terraform. OpenAI is the external model provider.
 
 The previous infrastructure instructions are preserved in [REDME.legacy.md](REDME.legacy.md). Use the steps below for this portfolio; no `backend.hcl` or `terraform.tfvars` needs to be copied from the legacy stack.
+
+## GitHub CI/CD (recommended after the first deployment)
+
+Use [the GitHub setup and migration guide](deploy/github/README.md) to connect this repository to Azure with OIDC, move the existing portfolio Terraform state into private Azure Storage, and release through **Actions → Portfolio deployment**. The workflow runs CI, updates the Azure job package with Terraform, and validates/publishes the site in Azure. It creates no ACR and keeps OpenAI secrets in Key Vault. Azure DevOps is now legacy; the same guide lists the old CI resources that can be removed without deleting the app or its data.
+
+The following workstation steps remain the initial deployment and manual recovery path.
+
+For the expanded workload and the September 2026 run, follow [Monthly collection and September trigger](webapp/deploy/portfolio/MONTHLY.md). Images are generated only when missing and reused afterward.
 
 ## 1. Prepare your workstation and Azure login
 

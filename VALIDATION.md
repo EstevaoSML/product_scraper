@@ -98,3 +98,22 @@ Next local check: start Docker Desktop with Linux containers, run `docker compos
 - CI/CD YAML was parsed in contract tests; publishing and log-ingestion verification were tested with controlled responses. This is not Azure DevOps server-side YAML compilation or a live cloud run.
 - Container CI attempted; Docker Desktop Linux engine pipe was absent. No live Docker or Azure ingestion result is claimed.
 - No cloud apply, repository push, Azure DevOps bootstrap or deployment was executed. Real organization/project/repository IDs, state/network configuration and approvers must be supplied before the documented bootstrap.
+
+
+## GitHub portfolio delivery — 2026-09-28
+
+- 445 Python checks passed, app branch/statement coverage 92.43%; one existing dependency warning. The local QA runner used the existing scratch-directory ACL workaround for this Windows sandbox.
+- Six portfolio Terraform mocked plans passed, including preservation of the human operator under CI authentication. Portfolio and GitHub bootstrap Terraform validated with Terraform 1.14.7 / AzureRM 5.6.0.
+- Release regression checks cover empty/wrong state, preserved budget epoch and operator, denied deletions/IAM changes, successful scheduling restoration and failed smoke leaving scheduling disabled.
+- GitHub workflow YAML parses successfully. Bootstrap provider initialization succeeded; no bootstrap plan/apply or live GitHub Actions run was executed.
+- No Azure resources deleted or deployed, no code pushed, no paid model calls made. Remote state migration, GitHub environment/OIDC configuration and live smoke validation remain operator setup steps.
+- Docker/browser dependencies were unchanged. The existing CI container checks remain required on GitHub; no new local Docker validation is claimed.
+
+
+## Expanded monthly collection — 2026-09-29
+
+- 456 Python checks passed with 92.43% combined app coverage; one existing dependency warning. The QA runner used the existing Windows sandbox scratch-directory ACL workaround.
+- Six Terraform mock plans passed; AzureRM validation and formatting passed. Checks include 150 tasks, monthly schedule, 24-hour execution timeout, and the 20 billing-currency-unit Azure alert.
+- Added regression checks for preservation of the original ten IDs/history, three-retailer selection, legacy September reservations, image reuse and 50-image ceiling, durable reservations before image calls, lost-lease behavior, and rejection of backdated collection months in Python and PowerShell.
+- Docker integration attempted and blocked because the Docker Desktop Linux engine pipe is absent. No live browser, Azure apply, image generation or retailer research was run during implementation.
+- Deploy the new package and run Azure Smoke before the documented September CollectMonthly command. Live model accuracy, retailer availability and billed costs are not established by these local tests.
